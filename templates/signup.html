@@ -1,0 +1,26 @@
+{% extends "landing_base.html" %}
+
+{% block body %}
+<form method="post" hx-target="main">
+    <label for="email">Email</label>
+    <input type="email" name="username" id="email" placeholder="Email address"/>
+
+    <label for="name">Name</label>
+    <input name="name" id="name" placeholder="Name"/>
+
+    <label for="password">Password</label>
+    <input type="password" name="password" id="password" placeholder="Choose password"/>
+
+    <label for="confirm">Confirm password</label>
+    <input type="password" name="confirm_password" id="confirm" placeholder="Confirm password"/>
+
+    <button type="submit">Create account</button>
+</form> 
+<ul>
+    {% for message in messages %}
+    <li>
+        <span><strong>{{ message }}</strong></span>
+    </li>
+    {% endfor %}
+</ul>
+{% endblock %}

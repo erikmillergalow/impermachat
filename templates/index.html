@@ -1,0 +1,41 @@
+{% extends "landing_base.html" %}
+
+{% block body %}
+<!-- <div class="hero bg-base-200 min-h-screen"> -->
+<!--   <div class="hero-content flex-col lg:flex-row-reverse"> -->
+<!--     <div class="text-center lg:text-left"> -->
+<!--       <h1 class="text-5xl font-bold">Landing Page</h1> -->
+<!--       <p class="py-6"> -->
+<!--         This is a short and punchy description of the site. -->
+<!--       </p> -->
+<!--         <button class="btn" data-on-click="@post('/sse')">CLICK</button> -->
+<!--         <div id="counter" data-signals-count="0" data-text="$count"></div> -->
+<!--     </div> -->
+<!--     <div class="card bg-base-100 w-full max-w-sm shrink-0 shadow-2xl"> -->
+<!--       <div class="card-body"> -->
+<!--         <fieldset class="fieldset"> -->
+<!--           <label class="fieldset-label">Email</label> -->
+<!--           <input type="email" class="input" placeholder="Email" /> -->
+<!--           <label class="fieldset-label">Password</label> -->
+<!--           <input type="password" class="input" placeholder="Password" /> -->
+<!--           <div><a class="link link-hover">Forgot password?</a></div> -->
+<!--           <button class="btn btn-neutral mt-4">Login</button> -->
+<!--         </fieldset> -->
+<!--       </div> -->
+<!--     </div> -->
+<!--   </div> -->
+<!-- </div> -->
+<section class="container grid landing-section">
+    <div hx-boost="true" class="landing-cell">
+        <hgroup>
+            <h1>Landing page</h1>
+            <p>This is a short and punchy description of the site.</p>
+        </hgroup>
+        <a href="/signup" role="button">Create Account</a>
+    </div>
+    <div class="landing-cell">
+        <button class="btn" data-on-click="@post('http://localhost:3000/sse')">CLICK</button>
+        <div id="counter" data-signals-count="0" data-text="$count"></div>
+    </div>
+</section> 
+{% endblock %}

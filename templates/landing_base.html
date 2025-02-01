@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AAHDS</title>
+    <link href="/assets/css/pico.min.css" rel="stylesheet" type="text/css">
+    <link href="/assets/css/styles.css" rel="stylesheet" type="text/css">
+    <script type="module" src="/assets/js/fixi-0.5.7.js"></script>
+    <!-- <link href="/assets/css/daisyui-5.0.0.beta.2.css" rel="stylesheet" type="text/css"> -->
+    <!-- <script src="/assets/js/htmx_2-0-3.min.js"></script> -->
+    <!-- <script src="https://cdn.tailwindcss.com"></script> -->
+    <!-- <script src="https://unpkg.com/@tailwindcss/browser@4"></script> -->
+    <!-- <script type="module" src="/assets/js/datastar-1-0-0-beta-2-987d04d5a076d8bb.js"></script> -->
+    <!-- <script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.0-beta.2/bundles/datastar.js"></script> -->
+    <script type="module" src="/assets/js/datastar-1.0.0.beta.1.js"></script>
+
+</head>
+<body class="container">
+    <header>
+<!-- <div class="navbar bg-base-100 shadow-sm"> -->
+<!--   <div class="flex-1"> -->
+<!--     <a class="btn btn-ghost text-xl">AxumStarter</a> -->
+<!--   </div> -->
+<!--   <div class="flex-none"> -->
+<!--     <ul class="menu menu-horizontal px-1"> -->
+<!--       <li><a>About</a></li> -->
+<!--       <li><a href="/signin">Sign In</a></li> -->
+<!--       <!-- <li> --> -->
+<!--       <!--   <details> --> -->
+<!--       <!--     <summary>Parent</summary> --> -->
+<!--       <!--     <ul class="bg-base-100 rounded-t-none p-2"> --> -->
+<!--       <!--       <li><a>Link 1</a></li> --> -->
+<!--       <!--       <li><a>Link 2</a></li> --> -->
+<!--       <!--     </ul> --> -->
+<!--       <!--   </details> --> -->
+<!--       <!-- </li> --> -->
+<!--     </ul> -->
+<!--   </div> -->
+<!-- </div> -->
+        <nav hx-boost="true">
+            <ul>
+                <li><a href="/"><strong>AAHDS</strong></a></li>
+            </ul>
+            <ul>
+                <li><a href='/about'>About</a></li>
+                <li><a href='/signin'>Sign In</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        {% block body %}{% endblock %}
+    </main>
+</body>
+</html>

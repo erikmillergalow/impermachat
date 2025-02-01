@@ -1,0 +1,24 @@
+{% extends "landing_base.html" %}
+
+{% block body %}
+<form method="post">
+    <fieldset>
+        <label for="username">Username</label>
+        <input name="username" id="username" value="ferris" />
+        <label for="password">Password</label>
+        <input name="password" id="password" type="password" value="hunter42" />
+    </fieldset>
+    <input type="submit" value="Login" />
+
+    {% if let Some(next) = next %}
+    <input type="hidden" name="next" value="{{next}}"
+    {% endif %}
+</form>
+<ul>
+    {% for message in messages %}
+    <li>
+        <span><strong>{{ message }}</strong></span>
+    </li>
+    {% endfor %}
+</ul>
+{% endblock %}

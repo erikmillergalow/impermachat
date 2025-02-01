@@ -75,6 +75,22 @@
     margin-top: calc(var(--spacing) * 4);
 }
 
+nav {
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+
+.nav-right {
+    flex: 1;
+}
+
+.nav-left {
+    flex: none;
+}
+
+nav ul {
+    padding-inline: 1;
+}
+
 section.landing-section {
     padding-top: 3rem;
     padding-bottom: 3rem;

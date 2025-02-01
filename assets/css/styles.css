@@ -1,11 +1,3 @@
-
-
-/* @plugin "daisyui/theme" { */
-/*   name: "forest"; */
-/*   default: false; */
-/*   prefersdark: false; */
-/*   color-scheme: "dark"; */
-
 :root {
 
     /* daisyui everforest hard */
@@ -37,6 +29,50 @@
     --border: 2px;
     --depth: 1;
     --noise: 0;
+
+    /* utility */
+    --spacing: 0.25rem;
+}
+
+.min-h-screen {
+    min-height: 100vh;
+}
+
+.hero-flex {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    @media (width >= 64rem) { 
+        flex-direction: row-reverse;
+    }
+}
+
+.hero-text {
+    text-align: center;
+    @media (width >= 64rem) { 
+        text-align: left;
+    }
+}
+
+.hero-title {
+    font-size: 3rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.landing-form {
+    width: 100%;
+    max-width: 24rem;
+    flex-shrink: 0;
+    box-shadow:  0 25px 50px -12px rgb(0 0 0 / 0.25);
+}
+
+.py-6 {
+    padding-block: calc(var(--spacing) * 6);
+}
+
+.mt-4 {
+    margin-top: calc(var(--spacing) * 4);
 }
 
 section.landing-section {

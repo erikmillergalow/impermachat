@@ -7,9 +7,17 @@ use tower_http::services::ServeDir;
 use axum_messages::MessagesManagerLayer;
 use sqlx::SqlitePool;
 use time::Duration;
-use tokio::{signal, task::AbortHandle};
+use tokio::{
+    signal,
+    task::AbortHandle,
+    // sync::Mutex,
+};
 use tower_sessions::cookie::Key;
 use tower_sessions_sqlx_store::SqliteStore;
+// use std::{
+//     sync::Arc,
+//     collections::HashMap,
+// };
 
 // mod models;
 // mod routes;
@@ -65,6 +73,12 @@ impl App {
         // let cors_layer = CorsLayer::new()
         //     .allow_headers(Any);
         //     .allow_headers([http::header::CONTENT_TYPE]);
+
+        // initialize shared state
+        // let rooms = Arc::new(rooms::AllRooms {
+        //     rooms: Mutex::new(HashMap::new())
+        // });
+        // let rooms = rooms::AllRooms::new();
 
         let app = protected::router()
             // signed in routes like /dashboard go here

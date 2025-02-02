@@ -15,7 +15,7 @@ use tower_sessions_sqlx_store::SqliteStore;
 // mod routes;
 use crate::{
     models::users::Backend,
-    routes::{auth, protected, public},
+    routes::{auth, protected, public, rooms},
 };
 
 
@@ -71,6 +71,7 @@ impl App {
             .route_layer(login_required!(Backend, login_url = "/signin"))
             .merge(auth::router())
             .merge(public::router())
+            .merge(rooms::router())
             // public routes like login page can go here
             .layer(MessagesManagerLayer)
             .layer(auth_layer)

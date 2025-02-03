@@ -1,8 +1,10 @@
 use std::{
     // time::Duration,
     sync::Arc,
-    convert::Infallible
+    convert::Infallible,
+    // boxed::Box,
 };
+use http::HeaderValue;
 use std::collections::HashMap;
 use tokio::sync::{
     Mutex,
@@ -21,25 +23,51 @@ use axum::{
         Json,
     },
     response::{
+        // AppendHeaders,
         IntoResponse,
         sse::{
             Event,
             Sse,
+            // KeepAlive,
         },
     },
-    http::StatusCode,
+    http::{
+        StatusCode,
+        // HeaderMap,
+    },
 };
 use tokio_stream::StreamExt as _;
 use futures_util::stream::{self, Stream};
 use serde::Deserialize;
-use async_stream::try_stream;
+use async_stream::{
+    try_stream,
+    // AsyncStream,
+};
 use tokio_stream::wrappers::BroadcastStream;
+use tower_http::set_header::SetResponseHeaderLayer;
 
 pub fn router() -> Router<()> {
     let rooms = AllRooms::new();
+
+    let sse_router = Router::new()
+        .route("/connect", get(connect_to_room))
+        .layer(SetResponseHeaderLayer::overriding(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("text/event-stream"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            http::header::CACHE_CONTROL,
+            HeaderValue::from_static("no-cache"),
+        ));
+        // .layer(SetResponseHeaderLayer::overriding(
+        //     http::header::CONNECTION,
+        //     HeaderValue::from_static("keep-alive"),
+        // ));
+
     Router::new()
         .route("/room/:room_id", get(render_room))
-        .route("/room/:room_id/connect", get(connect_to_room))
+        .nest("/room/:room_id", sse_router)
+        // .route("/room/:room_id/connect", get(connect_to_room))
         .route("/room/:room_id/live", post(update_room))
         .route("/room/:room_id/submit", post(submit_message))
         .with_state(rooms)
@@ -114,6 +142,8 @@ impl AllRooms {
 enum Action {
     Typing,
     Send,
+    // Join(person),
+    // Leave(person),
 }
 
 // #[derive(Default)]
@@ -150,10 +180,17 @@ pub struct SubmitTemplate {
 async fn connect_to_room(
     Path(RoomParams { room_id }): Path<RoomParams>,
     State(state): State<Arc<AllRooms>>,
+// ) -> impl IntoResponse {
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     println!("connect to room");
     println!("incoming param: {:?}", room_id);
-    
+
+    // let headers = [
+    //     (http::header::CONTENT_TYPE, HeaderValue::from_static("text/event-stream")),
+    //     (http::header::CACHE_CONTROL, HeaderValue::from_static("no-cache")),
+    //     (http::header::CONNECTION, HeaderValue::from_static("keep-alive")),
+    // ];
+
     // check for existing room or create one
     let rx = {
         let mut rooms = state.rooms.lock().await;
@@ -171,15 +208,10 @@ async fn connect_to_room(
         }
     };
    
-    // let rx = {
-    //     let rooms = state.rooms.lock().await;
-    //     rooms.get(&room_id)
-    //         .map(|room| room.tx.subscribe())
-    //         .expect("Room should exist")
-    // };
-    //
-    // let mut broadcast_stream = BroadcastStream::new(rx);
+    // let stream: Box<dyn Stream<Item = Result<Event, Infallible>> + Send> = Box::pin(try_stream! {
     let stream = try_stream! {
+        // flush
+        yield Event::default().data("");
         
         // let mut broadcast_stream = BroadcastStream::new(tx.subscribe());
         // let mut broadcast_stream = BroadcastStream::new(rx);
@@ -221,17 +253,20 @@ async fn connect_to_room(
                 }
 
             }
-
-            // yield Event::default()
-            //     .event("datastar-merge-fragments")
-            //     .data(MessageTemplate {
-            //             messages: format!("{}{}", initial.join(""), update.1.clone()),
-            //     }.render().unwrap());
-            println!("Stream ended for room: {}", room_id);
         }
     };
 
+    // Sse::new(stream)
+    //     .keep_alive(KeepAlive::default())
+    //     .headers(AppendHeaders([
+    //         ("Cache-Control", "no-cache"),
+    //         ("Connection", "keep-alive"),
+    //     ]))
     Sse::new(stream)
+    // (AppendHeaders([
+    //         ("Cache-Control", "no-cache"),
+    //         ("Connection", "keep-alive"),
+    //     ]), Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 #[derive(Debug, Deserialize)]

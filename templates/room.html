@@ -22,22 +22,18 @@
         <header>
             <nav class="navbar bg-base-100">
                 <div class="nav-right">
-                    <a class="btn btn-ghost text-xl">Room: {{ room_id }}</a>
+                    <a class="btn btn-ghost text-xl btn-xl">Room: {{ room_id }}</a>
                 </div>
-                <!-- <div class="nav-left"> -->
-                <!--     <ul class="menu menu-horizontal"> -->
-                <!--         <li><a>About</a></li> -->
-                <!--         <li><a href="/signin">Sign In</a></li> -->
-                <!--     </ul> -->
-                <!-- </div> -->
             </nav>
         </header>
-    <main>
+    <main class="room">
         <div id="room-messages" data-on-load="@get('/room/{{ room_id }}/connect')">
                 <div id="message-list"></div>
         </div>
+        <div id="typing" class="mt-4"></div>
 
-        <input id="room-input" data-bind-message data-on-input="@post('/room/{{ room_id }}/live')" />
+        <div data-on-keydown__window="evt.key == 'Enter' && @post('/room/{{ room_id }}/submit')"></div>
+        <input id="room-input" class="input mt-4" data-signals-person="{{ person }}" data-bind-message data-on-input="@post('/room/{{ room_id }}/live')" />
     </main>
 </body>
 </html>

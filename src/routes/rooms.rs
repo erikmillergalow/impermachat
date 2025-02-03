@@ -24,13 +24,10 @@ use axum::{
         IntoResponse,
         sse::{
             Event,
-            // KeepAlive,
             Sse,
         },
     },
     http::StatusCode,
-    // Error,
-    // Result<(), Error>,
 };
 use tokio_stream::StreamExt as _;
 use futures_util::stream::{self, Stream};
@@ -44,7 +41,7 @@ pub fn router() -> Router<()> {
         .route("/room/:room_id", get(render_room))
         .route("/room/:room_id/connect", get(connect_to_room))
         .route("/room/:room_id/live", post(update_room))
-        // .route("/sse", post(connect_to_room))
+        .route("/room/:room_id/submit", post(submit_message))
         .with_state(rooms)
 }
 
@@ -53,6 +50,7 @@ pub fn router() -> Router<()> {
 pub struct RoomTemplate {
     room_id: String,
     messages: Vec<String>,
+    person: u32,
 }
 
 async fn render_room(
@@ -60,13 +58,45 @@ async fn render_room(
     State(state): State<Arc<AllRooms>>,
 ) -> RoomTemplate { 
     println!("room id: {room_id}");
-    RoomTemplate{
-        room_id: room_id.clone(),
-        messages: state.rooms.lock().await
-            .get(&room_id)
-            .map(|r| r.data.clone())
-            .unwrap_or_default()
+    // let mut room = state.rooms.lock().await.get(&room_id).unwrap_or_default();
+    // room.join_count = room.join_count + 1;
+    // check for existing room or create one
+    let mut rooms = state.rooms.lock().await;
+    if let Some(room) = rooms.get_mut(&room_id) {
+        room.join_count = room.join_count + 1;
+        // room.tx.subscribe();
+        RoomTemplate{
+            room_id: room_id.clone(),
+            messages: room.data.clone(),
+            // messages: room
+            //     .get(&room_id)
+            //     .map(|r| r.data.clone())
+            //     .unwrap_or_default(),
+            person: room.join_count,
+        }
+    } else {
+        let (tx, _rx) = broadcast::channel(100);
+        rooms.insert(room_id.clone(), Room{
+            tx,
+            data: Vec::new(),
+            join_count: 1,
+        });
+        RoomTemplate{
+            room_id: room_id.clone(),
+            messages: Vec::new(),
+            person: 1,
+        }
+        // rx
     }
+    // RoomTemplate{
+    //     room_id: room_id.clone(),
+    //     // messages: room.data.clone(),
+    //     // messages: room
+    //     //     .get(&room_id)
+    //     //     .map(|r| r.data.clone())
+    //     //     .unwrap_or_default(),
+    //     person: room.join_count,
+    // }
 }
 
 pub struct AllRooms {
@@ -80,10 +110,24 @@ impl AllRooms {
     }
 }
 
-struct Room {
-    tx: broadcast::Sender<String>,
-    data: Vec<String>,
+#[derive(Clone, Debug)]
+enum Action {
+    Typing,
+    Send,
 }
+
+// #[derive(Default)]
+struct Room {
+    tx: broadcast::Sender<(u32, String, Action)>,
+    data: Vec<String>,
+    join_count: u32,
+    // people: Vec<Person>,
+}
+
+// struct Person {
+//     name: String,
+//     current_message: String,
+// }
 
 #[derive(Debug, Deserialize)]
 struct RoomParams {
@@ -94,6 +138,13 @@ struct RoomParams {
 #[template(path = "message.html")]
 pub struct MessageTemplate {
     message: String,
+    person: u32,
+}
+
+#[derive(Template)]
+#[template(path = "submit_message.html")]
+pub struct SubmitTemplate {
+    messages: Vec<String>,
 }
 
 async fn connect_to_room(
@@ -106,35 +157,77 @@ async fn connect_to_room(
     // check for existing room or create one
     let rx = {
         let mut rooms = state.rooms.lock().await;
-        if let Some(room) = rooms.get(&room_id) {
+        if let Some(room) = rooms.get_mut(&room_id) {
+            room.join_count = room.join_count + 1;
             room.tx.subscribe()
         } else {
             let (tx, rx) = broadcast::channel(100);
             rooms.insert(room_id.clone(), Room{
                 tx,
                 data: Vec::new(),
+                join_count: 1,
             });
             rx
         }
     };
-    
+   
+    // let rx = {
+    //     let rooms = state.rooms.lock().await;
+    //     rooms.get(&room_id)
+    //         .map(|room| room.tx.subscribe())
+    //         .expect("Room should exist")
+    // };
+    //
+    // let mut broadcast_stream = BroadcastStream::new(rx);
     let stream = try_stream! {
+        
+        // let mut broadcast_stream = BroadcastStream::new(tx.subscribe());
+        // let mut broadcast_stream = BroadcastStream::new(rx);
         let initial = state.rooms.lock().await
             .get(&room_id)
             .map(|r| r.data.clone())
             .unwrap_or_default();
-        yield Event::default().data(initial.join("\n"));
+        yield Event::default()
+            .event("datastar-merge-fragments")
+            .data(SubmitTemplate {
+                    messages: initial,
+            }.render().unwrap());
 
+        // let room = state.rooms.lock().await.get(&room_id).unwrap();
         let mut broadcast_stream = BroadcastStream::new(rx);
         while let Some(Ok(update)) = broadcast_stream.next().await {
+            println!("Processing update: {:?} for room: {}", update.2, room_id);
+            let message_history = state.rooms.lock().await
+                .get(&room_id)
+                .map(|r| r.data.clone())
+                .unwrap_or_default();
             println!("New broadcast!");
-//         .event("datastar-merge-fragments")
-//         .data(CountTemplate{ count: new_count }.render().unwrap());
-            yield Event::default()
-                .event("datastar-merge-fragments")
-                .data(MessageTemplate {
-                        message: update,
-                }.render().unwrap());
+
+            match update.2 {
+                Action::Typing => {
+                    yield Event::default()
+                        .event("datastar-merge-fragments")
+                        .data(MessageTemplate {
+                                message: update.1,
+                                person: update.0,
+                        }.render().unwrap());
+                },
+                Action::Send => {
+                    yield Event::default()
+                        .event("datastar-merge-fragments")
+                        .data(SubmitTemplate {
+                                messages: message_history,
+                        }.render().unwrap());
+                }
+
+            }
+
+            // yield Event::default()
+            //     .event("datastar-merge-fragments")
+            //     .data(MessageTemplate {
+            //             messages: format!("{}{}", initial.join(""), update.1.clone()),
+            //     }.render().unwrap());
+            println!("Stream ended for room: {}", room_id);
         }
     };
 
@@ -143,6 +236,7 @@ async fn connect_to_room(
 
 #[derive(Debug, Deserialize)]
 struct UpdateRoomRequest {
+    person: u32,
     message: String,
 }
 
@@ -152,60 +246,41 @@ async fn update_room(
     Path(RoomParams { room_id }): Path<RoomParams>,
     Json(payload): Json<UpdateRoomRequest>,
 ) -> impl IntoResponse {
-    println!("SSE");
+    println!("typing");
     println!("incoming param: {:?}", room_id);
     println!("incoming data: {:?}", payload);
     
     // check for existing room or create one
-    // let rx = {
-    //     let mut rooms = state.rooms.lock().await;
-    //     if let Some(room) = rooms.get(&room_id) {
-    //         room.tx.subscribe()
-    //     } else {
-    //         let (tx, rx) = broadcast::channel(100);
-    //         rooms.insert(room_id.clone(), Room{
-    //             tx,
-    //             data: Vec::new(),
-    //         });
-    //         rx
-    //     }
-    // };
+    
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
-        room.data.push(payload.message.clone());
-        if let Err(e) = room.tx.send(payload.message) {
+        // room.data.push(payload.message.clone());
+        if let Err(e) = room.tx.send((payload.person, payload.message, Action::Typing)) {
             println!("Error broadcasting: {}", e);
         }
-        // room.tx.send(payload.message)?;
     }
     StatusCode::OK
     // Ok(())
 }
 
-// post function (user interacts with textarea or something)
+async fn submit_message(
+    State(state): State<Arc<AllRooms>>,
+    Path(RoomParams { room_id }): Path<RoomParams>,
+    Json(payload): Json<UpdateRoomRequest>,
+) -> impl IntoResponse {
+    println!("submit");
+    println!("incoming param: {:?}", room_id);
+    println!("incoming data: {:?}", payload);
 
-#[derive(Debug, Deserialize)]
-struct CountRequest {
-    count: u32,
+    // check for existing room or create one
+
+    let mut rooms = state.rooms.lock().await;
+    if let Some(room) = rooms.get_mut(&room_id) {
+        room.data.push(payload.message.clone());
+        if let Err(e) = room.tx.send((payload.person, payload.message, Action::Send)) {
+            println!("Error broadcasting: {}", e);
+        }
+    }
+    StatusCode::OK
+    // Ok(())
 }
-
-#[derive(Template)]
-#[template(path = "count_response.html")]
-pub struct CountTemplate {
-    count: u32,
-}
-
-// async fn sse_handler(extract::Json(payload): extract::Json<CountRequest>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-//     println!("SSE");
-//     println!("incoming json: {:?}", payload);
-//
-//     let new_count = payload.count + 1;
-//
-//     let event = Event::default()
-//         .event("datastar-merge-fragments")
-//         .data(CountTemplate{ count: new_count }.render().unwrap());
-//
-//     let stream = stream::once(async move { Ok(event) });
-//
-//     Sse::new(stream)//.keep_alive(KeepAlive::default())
-// }

@@ -91,6 +91,12 @@ nav ul {
     padding-inline: 1;
 }
 
+.room {
+    max-width: 600px;
+    /* margin-right: auto; */
+    margin-left: 2rem;
+}
+
 section.landing-section {
     padding-top: 3rem;
     padding-bottom: 3rem;

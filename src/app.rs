@@ -92,7 +92,7 @@ impl App {
             // .layer(cors_layer)
             .nest_service("/assets", ServeDir::new("assets"));
 
-        let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
 
         // ensure we have a shutdown signal to abort the deletion task
         axum::serve(listener, app.into_make_service())

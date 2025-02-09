@@ -1,5 +1,4 @@
 mod app;
-mod models;
 mod routes;
 use crate::app::App;
 

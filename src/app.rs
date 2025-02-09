@@ -1,30 +1,15 @@
-use axum_login::{
-    login_required,
-    tower_sessions::{ExpiredDeletion, Expiry, SessionManagerLayer},
-    AuthManagerLayerBuilder,
-};
+use axum_login::tower_sessions::ExpiredDeletion;
 use tower_http::services::ServeDir;
-use axum_messages::MessagesManagerLayer;
 use sqlx::SqlitePool;
-use time::Duration;
 use tokio::{
     signal,
     task::AbortHandle,
-    // sync::Mutex,
 };
-use tower_sessions::cookie::Key;
 use tower_sessions_sqlx_store::SqliteStore;
-// use std::{
-//     sync::Arc,
-//     collections::HashMap,
-// };
-
-// mod models;
-// mod routes;
-use crate::{
-    models::users::Backend,
-    routes::{auth, protected, public, rooms},
+use crate::routes::{
+    public, rooms
 };
+
 
 
 pub struct App {
@@ -53,43 +38,13 @@ impl App {
                 .continuously_delete_expired(tokio::time::Duration::from_secs(60)),
         );
 
-        // generate key to sign the session cookie
-        let key = Key::generate();
-
-        // configure the session layer
-        let session_layer = SessionManagerLayer::new(session_store)
-            .with_secure(false)
-            .with_expiry(Expiry::OnInactivity(Duration::days(1)))
-            .with_signed(key);
-
-        // auth service
-        // combines the session layer with our backend to establish the 
-        // auth service which will provide the auth session as a request
-        // extension
-        let backend = Backend::new(self.db);
-        let auth_layer = AuthManagerLayerBuilder::new(backend, session_layer).build();
-
         // let cors_layer = CorsLayer::permissive();
         // let cors_layer = CorsLayer::new()
         //     .allow_headers(Any);
         //     .allow_headers([http::header::CONTENT_TYPE]);
 
-        // initialize shared state
-        // let rooms = Arc::new(rooms::AllRooms {
-        //     rooms: Mutex::new(HashMap::new())
-        // });
-        // let rooms = rooms::AllRooms::new();
-
-        let app = protected::router()
-            // signed in routes like /dashboard go here
-            .route_layer(login_required!(Backend, login_url = "/signin"))
-            .merge(auth::router())
-            .merge(public::router())
+        let app = public::router()
             .merge(rooms::router())
-            // public routes like login page can go here
-            .layer(MessagesManagerLayer)
-            .layer(auth_layer)
-            // .layer(cors_layer)
             .nest_service("/assets", ServeDir::new("assets"));
 
         let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();

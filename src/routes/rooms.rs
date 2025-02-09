@@ -1,8 +1,6 @@
 use std::{
-    // time::Duration,
     sync::Arc,
     convert::Infallible,
-    // boxed::Box,
 };
 use http::HeaderValue;
 use std::collections::HashMap;
@@ -23,12 +21,10 @@ use axum::{
         Json,
     },
     response::{
-        // AppendHeaders,
         IntoResponse,
         sse::{
             Event,
             Sse,
-            // KeepAlive,
         },
     },
     http::{
@@ -77,7 +73,7 @@ pub fn router() -> Router<()> {
 #[template(path="room.html")]
 pub struct RoomTemplate {
     room_id: String,
-    messages: Vec<String>,
+    messages: Vec<(String, String)>,
     person: u32,
 }
 
@@ -91,15 +87,11 @@ async fn render_room(
     // check for existing room or create one
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
-        room.join_count = room.join_count + 1;
+        // room.join_count = room.join_count + 1;
         // room.tx.subscribe();
         RoomTemplate{
             room_id: room_id.clone(),
             messages: room.data.clone(),
-            // messages: room
-            //     .get(&room_id)
-            //     .map(|r| r.data.clone())
-            //     .unwrap_or_default(),
             person: room.join_count,
         }
     } else {
@@ -114,17 +106,7 @@ async fn render_room(
             messages: Vec::new(),
             person: 1,
         }
-        // rx
     }
-    // RoomTemplate{
-    //     room_id: room_id.clone(),
-    //     // messages: room.data.clone(),
-    //     // messages: room
-    //     //     .get(&room_id)
-    //     //     .map(|r| r.data.clone())
-    //     //     .unwrap_or_default(),
-    //     person: room.join_count,
-    // }
 }
 
 pub struct AllRooms {
@@ -136,6 +118,10 @@ impl AllRooms {
             rooms: Mutex::new(HashMap::new()),
         })
     }
+
+    // pub fn room_exists(room_name: String) -> bool {
+    //     if
+    // }
 }
 
 #[derive(Clone, Debug)]
@@ -149,7 +135,7 @@ enum Action {
 // #[derive(Default)]
 struct Room {
     tx: broadcast::Sender<(u32, String, Action)>,
-    data: Vec<String>,
+    data: Vec<(String, String)>,
     join_count: u32,
     // people: Vec<Person>,
 }
@@ -174,13 +160,12 @@ pub struct MessageTemplate {
 #[derive(Template)]
 #[template(path = "submit_message.html")]
 pub struct SubmitTemplate {
-    messages: Vec<String>,
+    messages: Vec<(String, String)>,
 }
 
 async fn connect_to_room(
     Path(RoomParams { room_id }): Path<RoomParams>,
     State(state): State<Arc<AllRooms>>,
-// ) -> impl IntoResponse {
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     println!("connect to room");
     println!("incoming param: {:?}", room_id);
@@ -208,13 +193,10 @@ async fn connect_to_room(
         }
     };
    
-    // let stream: Box<dyn Stream<Item = Result<Event, Infallible>> + Send> = Box::pin(try_stream! {
     let stream = try_stream! {
         // flush
         yield Event::default().data("");
         
-        // let mut broadcast_stream = BroadcastStream::new(tx.subscribe());
-        // let mut broadcast_stream = BroadcastStream::new(rx);
         let initial = state.rooms.lock().await
             .get(&room_id)
             .map(|r| r.data.clone())
@@ -225,7 +207,6 @@ async fn connect_to_room(
                     messages: initial,
             }.render().unwrap());
 
-        // let room = state.rooms.lock().await.get(&room_id).unwrap();
         let mut broadcast_stream = BroadcastStream::new(rx);
         while let Some(Ok(update)) = broadcast_stream.next().await {
             println!("Processing update: {:?} for room: {}", update.2, room_id);
@@ -251,22 +232,11 @@ async fn connect_to_room(
                                 messages: message_history,
                         }.render().unwrap());
                 }
-
             }
         }
     };
 
-    // Sse::new(stream)
-    //     .keep_alive(KeepAlive::default())
-    //     .headers(AppendHeaders([
-    //         ("Cache-Control", "no-cache"),
-    //         ("Connection", "keep-alive"),
-    //     ]))
     Sse::new(stream)
-    // (AppendHeaders([
-    //         ("Cache-Control", "no-cache"),
-    //         ("Connection", "keep-alive"),
-    //     ]), Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -311,7 +281,7 @@ async fn submit_message(
 
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
-        room.data.push(payload.message.clone());
+        room.data.push((payload.person.clone().to_string(), payload.message.clone()));
         if let Err(e) = room.tx.send((payload.person, payload.message, Action::Send)) {
             println!("Error broadcasting: {}", e);
         }

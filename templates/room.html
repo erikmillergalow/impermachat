@@ -3,37 +3,32 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AAHDS</title>
-    <!-- <link href="/assets/css/pico.min.css" rel="stylesheet" type="text/css"> -->
-    <!-- <script src="/assets/js/htmx_2-0-3.min.js"></script> -->
-    <!-- <script src="https://cdn.tailwindcss.com"></script> -->
-    <!-- <script src="https://unpkg.com/@tailwindcss/browser@4"></script> -->
-    <!-- <script type="module" src="/assets/js/datastar-1-0-0-beta-2-987d04d5a076d8bb.js"></script> -->
-    <!-- <script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.0-beta.2/bundles/datastar.js"></script> -->
-    <!-- <link href="/assets/css/preflight.css" rel="stylesheet" type="text/css"> -->
-    <link href="/assets/css/daisyui-5.0.0.beta.2.css" rel="stylesheet" type="text/css">
+    <title>ImpermaChat</title>
+    <link href="/assets/css/missing.min.css" rel="stylesheet" type="text/css">
     <script type="module" src="/assets/js/fixi-0.5.7.js"></script>
     <script type="module" src="/assets/js/datastar-1.0.0.beta.1.js"></script>
-
     <link href="/assets/css/styles.css" rel="stylesheet" type="text/css">
-
 </head>
-<body class="container">
-        <header>
-            <nav class="navbar bg-base-100">
-                <div class="nav-right">
-                    <a class="btn btn-ghost text-xl btn-xl">Room: {{ room_id }}</a>
-                </div>
-            </nav>
-        </header>
-    <main class="room">
-        <div id="room-messages" data-on-load="@get('/room/{{ room_id }}/connect')">
-                <div id="message-list"></div>
+<body class="fullscreen height:100%">
+    <nav class="navbar">
+        <div class="nav-right">
+            <a class="">Room: {{ room_id }}</a>
         </div>
-        <div id="typing" class="mt-4"></div>
+    </nav>
+    <main class="f-row width:100%">
+        <div class="flex-grow:1 justify-content:space-between">
+            <div id="room-messages height:100% overflow:auto" data-on-load="@get('/room/{{ room_id }}/connect')">
+                    <div id="message-list"></div>
+            </div>
 
-        <div data-on-keydown__window="evt.key == 'Enter' && @post('/room/{{ room_id }}/submit')"></div>
-        <input id="room-input" class="input mt-4" data-signals-person="{{ person }}" data-bind-message data-on-input="@post('/room/{{ room_id }}/live')" />
+            <!-- this should become a response of setting a name -->
+            <!-- <div data-on-keydown__window="evt.key == 'Enter' && @post('/room/{{ room_id }}/submit')"></div> -->
+            <!-- <input id="room-input" class="input mt-4" data-signals-person="{{ person }}" data-bind-message data-on-input="@post('/room/{{ room_id }}/live')" /> -->
+            <!-- <input id="set-name" data-bind-name  -->
+        </div>
+        <div class="flex-grow:1">
+            <div id="typing" class="mt-4"></div>
+        </div>
     </main>
 </body>
 </html>

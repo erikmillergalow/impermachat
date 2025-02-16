@@ -16,15 +16,11 @@
         </div>
     </nav>
     <main class="f-row width:100%">
-        <div class="flex-grow:1 justify-content:space-between">
-            <div id="room-messages height:100% overflow:auto" data-on-load="@get('/room/{{ room_id }}/connect')">
+        <div class="justify-content:space-between">
+            <div id="room-messages"  class="height:100% overflow:auto" data-on-load="@get('/room/{{ room_id }}/connect')">
                     <div id="message-list"></div>
             </div>
-
-            <!-- this should become a response of setting a name -->
-            <!-- <div data-on-keydown__window="evt.key == 'Enter' && @post('/room/{{ room_id }}/submit')"></div> -->
-            <!-- <input id="room-input" class="input mt-4" data-signals-person="{{ person }}" data-bind-message data-on-input="@post('/room/{{ room_id }}/live')" /> -->
-            <!-- <input id="set-name" data-bind-name  -->
+            <div id="chat-control"></div>
         </div>
         <div class="flex-grow:1">
             <div id="typing" class="mt-4"></div>

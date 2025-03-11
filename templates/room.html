@@ -17,6 +17,7 @@
     </nav>
     <div class="chat-container">
         <div class="chat-half">
+            <p class="chat-half-title">Chat log</p>
             <div id="room-messages" class="room-messages" data-on-load="@get('/room/{{ room_id }}/connect')">
                 <div id="message-list"></div>
             </div>
@@ -25,6 +26,7 @@
             </div>
         </div>
         <div class="chat-half">
+            <p class="chat-half-title">People typing</p>
             <div id="typing" class="mt-4"></div>
         </div>
     </div>

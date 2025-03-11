@@ -4,12 +4,14 @@ use sqlx::SqlitePool;
 use tokio::{
     signal,
     task::AbortHandle,
+    net::TcpListener,
 };
 use tower_sessions_sqlx_store::SqliteStore;
+use listenfd::ListenFd;
+
 use crate::routes::{
     public, rooms
 };
-
 
 
 pub struct App {
@@ -47,7 +49,18 @@ impl App {
             .merge(rooms::router())
             .nest_service("/assets", ServeDir::new("assets"));
 
-        let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+        // let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+        let mut listenfd = ListenFd::from_env();
+        let listener = match listenfd.take_tcp_listener(0).unwrap() {
+            // use listen fd 0 if provided
+            Some(listener) => {
+                listener.set_nonblocking(true).unwrap();
+                TcpListener::from_std(listener).unwrap()
+            }
+            // otherwise fall back to local listening
+            None => TcpListener::bind("0.0.0.0:8080").await.unwrap(),
+        };
+        println!("listening on {}", listener.local_addr().unwrap());
 
         // ensure we have a shutdown signal to abort the deletion task
         axum::serve(listener, app.into_make_service())

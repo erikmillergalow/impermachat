@@ -45,8 +45,6 @@ use async_stream::try_stream;
 use tokio_stream::wrappers::BroadcastStream;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower::ServiceBuilder;
-// use headers::Cookie;
-// use axum_extra::extract::CookieJar;
 
 pub fn router() -> Router<()> {
     let rooms = AllRooms::new();
@@ -202,6 +200,14 @@ pub struct InitNameTemplate {
     connection_id: String,
 }
 
+fn get_connection_cookie(headers: &HeaderMap) -> Option<String> {
+    headers.get("cookie")
+        .and_then(|c| c.to_str().ok())
+        .and_then(|c| c.split(';')
+            .find(|s| s.trim().starts_with("impermachat_id="))
+            .map(|s| s.trim_start_matches("impermachat_id=").to_string()))
+}
+
 #[axum::debug_handler]
 async fn connect_to_room(
     // cookies: TypedHeader<Cookie>,
@@ -214,13 +220,22 @@ async fn connect_to_room(
     println!("incoming param: {:?}", room_id);
 
     // get this person's uid
-    let connection_id = headers
-        .get("cookie")
-        .and_then(|c| c.to_str().ok())
-        .and_then(|c| c.split(';')
-            .find(|s| s.trim().starts_with("impermachat_id="))
-            .map(|s| s.trim_start_matches("impermachat_id=").to_string()))
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let connection_id = match get_connection_cookie(&headers) {
+        Some(id) => id,
+        None => {
+            println!("Uh oh!");
+            Uuid::new_v4().to_string()
+            // let error_stream = try_stream! {
+            //     yield Event::default()
+            //         .event("datastar-merge-fragments")
+            //         .data(MessageTemplate {
+            //             message: "Error setting up connection_id, please refresh the page.".to_string(),
+            //             person: "System".to_string(),
+            //         }.render().unwrap());
+            // };
+            // return Sse::new(error_stream);
+        }
+    };
 
     let mut name: Option<String> = None;
 

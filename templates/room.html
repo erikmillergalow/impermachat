@@ -9,22 +9,24 @@
     <script type="module" src="/assets/js/datastar-1.0.0.beta.1.js"></script>
     <link href="/assets/css/styles.css" rel="stylesheet" type="text/css">
 </head>
-<body class="fullscreen height:100%">
+<body class="chat-body">
     <nav class="navbar">
         <div class="nav-right">
             <a class="">Room: {{ room_id }}</a>
         </div>
     </nav>
-    <main class="f-row width:100%">
-        <div class="justify-content:space-between">
-            <div id="room-messages"  class="height:100% overflow:auto" data-on-load="@get('/room/{{ room_id }}/connect')">
-                    <div id="message-list"></div>
+    <div class="chat-container">
+        <div class="chat-half">
+            <div id="room-messages" class="room-messages" data-on-load="@get('/room/{{ room_id }}/connect')">
+                <div id="message-list"></div>
             </div>
-            <div id="chat-control"></div>
+            <div class="chat-control">
+                <div id="chat-control"></div>
+            </div>
         </div>
-        <div class="flex-grow:1">
+        <div class="chat-half">
             <div id="typing" class="mt-4"></div>
         </div>
-    </main>
+    </div>
 </body>
 </html>

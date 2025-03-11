@@ -26,22 +26,27 @@ use axum::{
             Event,
             Sse,
         },
+        Response,
     },
     http::{
+        Request,
         StatusCode,
-        // HeaderMap,
+        header::{COOKIE, SET_COOKIE},
+        HeaderMap,
     },
+    middleware::{self, Next},
+    body::Body,
 };
 use uuid::Uuid;
 use tokio_stream::StreamExt as _;
 use futures_util::stream::{self, Stream};
 use serde::Deserialize;
-use async_stream::{
-    try_stream,
-    // AsyncStream,
-};
+use async_stream::try_stream;
 use tokio_stream::wrappers::BroadcastStream;
 use tower_http::set_header::SetResponseHeaderLayer;
+use tower::ServiceBuilder;
+// use headers::Cookie;
+// use axum_extra::extract::CookieJar;
 
 pub fn router() -> Router<()> {
     let rooms = AllRooms::new();
@@ -64,11 +69,44 @@ pub fn router() -> Router<()> {
     Router::new()
         .route("/room/:room_id", get(render_room))
         .nest("/room/:room_id", sse_router)
-        // .route("/room/:room_id/connect", get(connect_to_room))
         .route("/room/:room_id/live/:person", post(update_room))
         .route("/room/:room_id/submit/:person", post(submit_message))
         .route("/room/:room_id/name/:connection_id", post(set_name))
+        .layer(ServiceBuilder::new().layer(middleware::from_fn(ensure_uid)))
         .with_state(rooms)
+}
+
+async fn ensure_uid(
+    request: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+
+    // check for cookie
+    let has_browser_id = request
+        .headers()
+        .get(COOKIE)
+        .and_then(|cookie| {
+            cookie
+                .to_str()
+                .ok()
+                .and_then(|c| c.split(';')
+                    .find(|s| s.trim().starts_with("impermachat_id=")))
+        })
+        .is_some();
+
+    let mut response = next.run(request).await;
+
+    // bestow an ID if none found
+    if !has_browser_id {
+        let new_browser_id = Uuid::new_v4().to_string();
+        let cookie = format!("impermachat_id={}; Path=/; HttpOnly", new_browser_id);
+        response.headers_mut().insert(
+            SET_COOKIE,
+            cookie.parse().unwrap()
+        );
+    }
+
+    Ok(response)
 }
 
 #[derive(Template)]
@@ -84,13 +122,9 @@ async fn render_room(
     State(state): State<Arc<AllRooms>>,
 ) -> RoomTemplate { 
     println!("room id: {room_id}");
-    // let mut room = state.rooms.lock().await.get(&room_id).unwrap_or_default();
-    // room.join_count = room.join_count + 1;
-    // check for existing room or create one
+
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
-        // room.join_count = room.join_count + 1;
-        // room.tx.subscribe();
         RoomTemplate{
             room_id: room_id.clone(),
             messages: room.data.clone(),
@@ -102,7 +136,7 @@ async fn render_room(
             tx,
             data: Vec::new(),
             join_count: 1,
-            people: Vec::new(),
+            people: HashMap::new(),
         });
         RoomTemplate{
             room_id: room_id.clone(),
@@ -121,10 +155,6 @@ impl AllRooms {
             rooms: Mutex::new(HashMap::new()),
         })
     }
-
-    // pub fn room_exists(room_name: String) -> bool {
-    //     if
-    // }
 }
 
 #[derive(Clone, Debug)]
@@ -132,8 +162,6 @@ enum Action {
     Typing,
     Send,
     SetName,
-    // Join(person),
-    // Leave(person),
 }
 
 // #[derive(Default)]
@@ -141,7 +169,7 @@ struct Room {
     tx: broadcast::Sender<(String, String, Action)>,
     data: Vec<(String, String)>,
     join_count: u32,
-    people: Vec<String>,
+    people: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -174,15 +202,26 @@ pub struct InitNameTemplate {
     connection_id: String,
 }
 
+#[axum::debug_handler]
 async fn connect_to_room(
+    // cookies: TypedHeader<Cookie>,
+    // jar: CookieJar,
+    headers: HeaderMap,
     Path(RoomParams { room_id }): Path<RoomParams>,
     State(state): State<Arc<AllRooms>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     println!("connect to room");
     println!("incoming param: {:?}", room_id);
 
-    // pass this to set name input, match to set name
-    let connection_id = uuid::Uuid::new_v4().to_string();
+    // get this person's uid
+    let connection_id = headers
+        .get("cookie")
+        .and_then(|c| c.to_str().ok())
+        .and_then(|c| c.split(';')
+            .find(|s| s.trim().starts_with("impermachat_id="))
+            .map(|s| s.trim_start_matches("impermachat_id=").to_string()))
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+
     let mut name: Option<String> = None;
 
     // let headers = [
@@ -203,7 +242,7 @@ async fn connect_to_room(
                 tx,
                 data: Vec::new(),
                 join_count: 1,
-                people: Vec::new(),
+                people: HashMap::new(),
             });
             rx
         }
@@ -227,7 +266,7 @@ async fn connect_to_room(
             .event("datastar-merge-fragments")
             .data(InitNameTemplate {
                 room_id: room_id.clone(),
-                connection_id: connection_id.clone()
+                connection_id: connection_id.to_string()
             }.render().unwrap());
 
         let mut broadcast_stream = BroadcastStream::new(rx);
@@ -241,13 +280,12 @@ async fn connect_to_room(
                         .event("datastar-merge-fragments")
                         .data(MessageTemplate {
                                 message: update.1,
-                                person: name.clone().unwrap_or("Missing name".to_string()),
+                                person: update.0,
                         }.render().unwrap());
                 },
                 Action::Send => {
                     let mut rooms = state.rooms.lock().await;
                     if let Some(room) = rooms.get_mut(&room_id) {
-                        room.data.push((name.clone().unwrap_or("Missing name".to_string()), update.1.clone()));
                         yield Event::default()
                             .event("datastar-merge-fragments")
                             .data(SubmitTemplate {
@@ -267,20 +305,6 @@ async fn connect_to_room(
                     }
                 },
             }
-            
-            // let mut rooms = state.rooms.lock().await;
-            // if let Some(room) = rooms.get_mut(&room_id) {
-            //     if let Some(person_to_remove) = &name {
-            //         room.people.retain(|x| x != person_to_remove);
-            //     }
-            //     // room.people.retain(|&x| *x != name);
-            //     room.join_count -= 1;
-            //     if room.join_count == 0 {
-            //         rooms.remove(&room_id);
-            //         println!("Room {} removed", room_id);
-            //     }
-            // }
-            // println!("Connection {} disconnected from room {}", connection_id, room_id);
         }
     };
 
@@ -299,6 +323,7 @@ struct TypingRequest {
 
 // #[debug_handler]
 async fn update_room(
+    headers: HeaderMap,
     State(state): State<Arc<AllRooms>>,
     Path(RoomPersonParams { room_id, person }): Path<RoomPersonParams>,
     Json(payload): Json<TypingRequest>,
@@ -306,12 +331,17 @@ async fn update_room(
     // println!("typing");
     // println!("incoming param: {:?}", room_id);
     // println!("incoming data: {:?}", payload);
-    
-    // check for existing room or create one
-    
+    let connection_id = headers
+        .get("cookie")
+        .and_then(|c| c.to_str().ok())
+        .and_then(|c| c.split(';')
+            .find(|s| s.trim().starts_with("impermachat_id="))
+            .map(|s| s.trim_start_matches("impermachat_id=").to_string()))
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
-        if let Err(e) = room.tx.send((person, payload.message, Action::Typing)) {
+        if let Err(e) = room.tx.send((connection_id, payload.message, Action::Typing)) {
             println!("Error broadcasting: {}", e);
         }
     }
@@ -319,6 +349,7 @@ async fn update_room(
 }
 
 async fn submit_message(
+    headers: HeaderMap,
     State(state): State<Arc<AllRooms>>,
     Path(RoomPersonParams { room_id, person }): Path<RoomPersonParams>,
     Json(payload): Json<TypingRequest>,
@@ -327,12 +358,18 @@ async fn submit_message(
     println!("incoming param: {:?}", room_id);
     println!("incoming data: {:?}", payload);
 
-    // check for existing room or create one
+    let connection_id = headers
+        .get("cookie")
+        .and_then(|c| c.to_str().ok())
+        .and_then(|c| c.split(';')
+            .find(|s| s.trim().starts_with("impermachat_id="))
+            .map(|s| s.trim_start_matches("impermachat_id=").to_string()))
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
 
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
-        // room.data.push((person.clone().to_string(), payload.message.clone()));
-        if let Err(e) = room.tx.send((person, payload.message, Action::Send)) {
+        room.data.push((person.clone().to_string(), payload.message.clone()));
+        if let Err(e) = room.tx.send((connection_id, payload.message, Action::Send)) {
             println!("Error broadcasting: {}", e);
         }
     }
@@ -371,6 +408,7 @@ pub struct StatusMessageTemplate {
     message: String,
 }
 async fn set_name(
+    headers: HeaderMap,
     State(state): State<Arc<AllRooms>>,
     Path(SetNameParams { room_id, connection_id }): Path<SetNameParams>,
     Json(payload): Json<SetNameRequest>,
@@ -379,13 +417,21 @@ async fn set_name(
     println!("incoming param: {:?}", room_id);
     println!("incoming data: {:?}", payload);
 
+    let connection_id = headers
+        .get("cookie")
+        .and_then(|c| c.to_str().ok())
+        .and_then(|c| c.split(';')
+            .find(|s| s.trim().starts_with("impermachat_id="))
+            .map(|s| s.trim_start_matches("impermachat_id=").to_string()))
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+
     let event = {
         let mut rooms = state.rooms.lock().await;
         if let Some(room) = rooms.get_mut(&room_id) {
-            if !room.people.contains(&payload.name) {
-                room.people.push(payload.name.clone());
+            if !room.people.contains_key(&payload.name) {
+                room.people.insert(payload.name.clone(), connection_id.clone());
                 if let Err(e) = room.tx.send((
-                    payload.name.clone(),
+                    connection_id.clone(),
                     connection_id.clone(),
                     Action::SetName,
                 )) {

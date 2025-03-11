@@ -9,9 +9,11 @@ askama_axum = "0.4.0"
 async-stream = "0.3.6"
 async-trait = "0.1.83"
 axum = { version = "0.7.9", features = ["macros"]}
+axum-extra = { version = "0.10.0", features = ["typed-header", "cookie"] }
 axum-login = "0.16.0"
 axum-messages = "0.7.0"
 futures-util = "0.3.31"
+headers = "0.4.0"
 http = "1.2.0"
 hyper = "1.5.2"
 listenfd = "1.0.1"

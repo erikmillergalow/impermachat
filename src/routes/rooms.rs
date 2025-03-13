@@ -125,7 +125,8 @@ async fn ensure_uid(
 #[template(path="room.html")]
 pub struct RoomTemplate {
     room_id: String,
-    messages: Vec<(String, String)>,
+    messages: Vec<Message>,
+    // messages: Vec<(String, String)>,
     person: u32,
 }
 
@@ -183,12 +184,21 @@ enum Action {
 #[derive(Clone)]
 struct Room {
     tx: broadcast::Sender<(String, String, Action)>,
-    message_history: Vec<(String, String)>,
+    message_history: Vec<Message>,
+    // message_history: Vec<(String, String)>,
     typing_state: HashMap<String, String>,
     join_count: u32,
     name_to_id: HashMap<String, String>,
     id_to_name: HashMap<String, String>,
     name_to_color: HashMap<String, String>,
+}
+
+#[derive(Clone)]
+struct Message {
+    name: String,
+    connection_id: String,
+    color: String,
+    content: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,7 +216,8 @@ pub struct MessageTemplate {
 #[derive(Template)]
 #[template(path = "submit_message.html")]
 pub struct SubmitTemplate {
-    messages: Vec<(String, String)>,
+    messages: Vec<Message>,
+    connection_id: String,
 }
 
 #[derive(Template)]
@@ -292,6 +303,7 @@ async fn connect_to_room(
             .event("datastar-merge-fragments")
             .data(SubmitTemplate {
                     messages: room.message_history.clone(),
+                    connection_id: connection_id.clone(),
             }.render().unwrap());
 
         // let person_name = match 
@@ -336,6 +348,7 @@ async fn connect_to_room(
                             .event("datastar-merge-fragments")
                             .data(SubmitTemplate {
                                 messages: room.message_history.clone(),
+                                connection_id: connection_id.clone(),
                             }.render().unwrap());
                     }
                     // clear user chat input
@@ -419,7 +432,13 @@ async fn submit_message(
         // replace these expects() with a new error broadcast event handler as to not crash the
         // entire server
         let person_name = room.id_to_name.get(&connection_id).cloned().expect("Person should have a name");
-        room.message_history.push((person_name.clone(), payload.message.clone()));
+        room.message_history.push(Message{
+            name: person_name.clone(),
+            content: payload.message.clone(),
+            color: name_to_color(&person_name),
+            connection_id: connection_id.clone(),
+        });
+        // room.message_history.push((person_name.clone(), payload.message.clone()));
         room.typing_state.insert(String::from(person_name.clone()), String::from(""));
         if let Err(e) = room.tx.send((connection_id.clone(), payload.message, Action::Send)) {
             println!("Error broadcasting: {}", e);

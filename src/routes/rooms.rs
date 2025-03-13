@@ -186,7 +186,8 @@ struct Room {
     tx: broadcast::Sender<(String, String, Action)>,
     message_history: Vec<Message>,
     // message_history: Vec<(String, String)>,
-    typing_state: HashMap<String, String>,
+    typing_state: HashMap<String, Message>,
+    // typing_state: HashMap<String, String>,
     join_count: u32,
     name_to_id: HashMap<String, String>,
     id_to_name: HashMap<String, String>,
@@ -223,7 +224,7 @@ pub struct SubmitTemplate {
 #[derive(Template)]
 #[template(path = "typing_messages.html")]
 pub struct TypingTemplate {
-    messages: HashMap<String, String>,
+    messages: HashMap<String, Message>,
 }
 
 #[derive(Template)]
@@ -400,7 +401,12 @@ async fn update_room(
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
         let person_name = room.id_to_name.get(&connection_id).cloned().expect("Person should have a name");
-        room.typing_state.insert(String::from(person_name.clone()), payload.message.clone());
+        room.typing_state.insert(String::from(person_name.clone()), Message{
+            name: person_name.clone(),
+            content: payload.message.clone(),
+            color: name_to_color(&person_name),
+            connection_id: connection_id.clone(),
+        });
         if let Err(e) = room.tx.send((connection_id.clone(), payload.message, Action::Typing)) {
             println!("Error broadcasting: {}", e);
         }
@@ -426,7 +432,6 @@ async fn submit_message(
         }
     };
 
-
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
         // replace these expects() with a new error broadcast event handler as to not crash the
@@ -438,8 +443,12 @@ async fn submit_message(
             color: name_to_color(&person_name),
             connection_id: connection_id.clone(),
         });
-        // room.message_history.push((person_name.clone(), payload.message.clone()));
-        room.typing_state.insert(String::from(person_name.clone()), String::from(""));
+        room.typing_state.insert(String::from(person_name.clone()), Message{
+            name: person_name.clone(),
+            content: String::from(""),
+            color: name_to_color(&person_name),
+            connection_id: connection_id.clone(),
+        });
         if let Err(e) = room.tx.send((connection_id.clone(), payload.message, Action::Send)) {
             println!("Error broadcasting: {}", e);
         }

@@ -74,6 +74,20 @@ pub fn router() -> Router<()> {
         .with_state(rooms)
 }
 
+fn name_to_color(name: &str) -> String {
+    let mut hash: u32 = 0;
+    for byte in name.bytes() {
+        hash = hash.wrapping_add(byte as u32);
+        hash = hash.wrapping_mul(31);
+    }
+
+    let r = (hash % 200) + 55; // +55 to avoid going too dark
+    let g = ((hash >> 8) % 200) + 55;
+    let b = ((hash >> 16) % 200) + 55;
+
+    format!("#{:02x}{:02x}{:02x}", r, g, b)
+}
+
 async fn ensure_uid(
     request: Request<Body>,
     next: Next,
@@ -136,6 +150,7 @@ async fn render_room(
             join_count: 1,
             name_to_id: HashMap::new(),
             id_to_name: HashMap::new(),
+            name_to_color: HashMap::new(),
             typing_state: HashMap::new(),
         });
         RoomTemplate{
@@ -173,6 +188,7 @@ struct Room {
     join_count: u32,
     name_to_id: HashMap<String, String>,
     id_to_name: HashMap<String, String>,
+    name_to_color: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -242,8 +258,6 @@ async fn connect_to_room(
         }
     };
 
-    // let mut name: Option<String> = None;
-
     // check for existing room or create one
     let rx = {
         let mut rooms = state.rooms.lock().await;
@@ -258,6 +272,7 @@ async fn connect_to_room(
                 join_count: 1,
                 name_to_id: HashMap::new(),
                 id_to_name: HashMap::new(),
+                name_to_color: HashMap::new(),
                 typing_state: HashMap::new(),
             });
             rx
@@ -287,7 +302,6 @@ async fn connect_to_room(
                     .data(ChatInputTemplate {
                         room_id: room_id.clone(),
                         person: name.to_string(),
-                        connection_id: connection_id.clone(),
                     }.render().unwrap())
             },
             None => {
@@ -339,7 +353,6 @@ async fn connect_to_room(
                             .data(ChatInputTemplate {
                                 room_id: room_id.clone(),
                                 person: update.0.clone(),
-                                connection_id: update.1.clone(),
                             }.render().unwrap())
                     }
                 },
@@ -428,7 +441,6 @@ struct SetNameRequest {
 pub struct ChatInputTemplate {
     room_id: String,
     person: String,
-    connection_id: String,
 }
 #[derive(Template)]
 #[template(path = "set_name.html")]
@@ -468,6 +480,7 @@ async fn set_name(
             if !room.name_to_id.contains_key(&payload.name) {
                 room.name_to_id.insert(payload.name.clone(), connection_id.clone());
                 room.id_to_name.insert(connection_id.clone(), payload.name.clone());
+                room.name_to_color.insert(payload.name.clone(), name_to_color(&payload.name));
                 if let Err(e) = room.tx.send((
                     payload.name.clone(),
                     connection_id.clone(),

@@ -134,7 +134,8 @@ async fn render_room(
             tx,
             data: Vec::new(),
             join_count: 1,
-            people: HashMap::new(),
+            name_to_id: HashMap::new(),
+            id_to_name: HashMap::new(),
         });
         RoomTemplate{
             room_id: room_id.clone(),
@@ -163,11 +164,13 @@ enum Action {
 }
 
 // #[derive(Default)]
+#[derive(Clone)]
 struct Room {
     tx: broadcast::Sender<(String, String, Action)>,
     data: Vec<(String, String)>,
     join_count: u32,
-    people: HashMap<String, String>,
+    name_to_id: HashMap<String, String>,
+    id_to_name: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -237,13 +240,7 @@ async fn connect_to_room(
         }
     };
 
-    let mut name: Option<String> = None;
-
-    // let headers = [
-    //     (http::header::CONTENT_TYPE, HeaderValue::from_static("text/event-stream")),
-    //     (http::header::CACHE_CONTROL, HeaderValue::from_static("no-cache")),
-    //     (http::header::CONNECTION, HeaderValue::from_static("keep-alive")),
-    // ];
+    // let mut name: Option<String> = None;
 
     // check for existing room or create one
     let rx = {
@@ -257,7 +254,8 @@ async fn connect_to_room(
                 tx,
                 data: Vec::new(),
                 join_count: 1,
-                people: HashMap::new(),
+                name_to_id: HashMap::new(),
+                id_to_name: HashMap::new(),
             });
             rx
         }
@@ -266,23 +264,38 @@ async fn connect_to_room(
     let stream = try_stream! {
         // flush
         yield Event::default().data("");
-        
-        let initial = state.rooms.lock().await
+
+        let room = state.rooms.lock().await
             .get(&room_id)
-            .map(|r| r.data.clone())
-            .unwrap_or_default();
-        yield Event::default()
-            .event("datastar-merge-fragments")
-            .data(SubmitTemplate {
-                    messages: initial,
-            }.render().unwrap());
+            .cloned()
+            .expect("Room should exist by now");
 
         yield Event::default()
             .event("datastar-merge-fragments")
-            .data(InitNameTemplate {
-                room_id: room_id.clone(),
-                connection_id: connection_id.to_string()
+            .data(SubmitTemplate {
+                    messages: room.data.clone(),
             }.render().unwrap());
+
+        // let person_name = match 
+        match room.id_to_name.get(&connection_id) {
+            Some(name) => {
+                yield Event::default()
+                    .event("datastar-merge-fragments")
+                    .data(ChatInputTemplate {
+                        room_id: room_id.clone(),
+                        person: name.to_string(),
+                        connection_id: connection_id.clone(),
+                    }.render().unwrap())
+            },
+            None => {
+                yield Event::default()
+                    .event("datastar-merge-fragments")
+                    .data(InitNameTemplate {
+                        room_id: room_id.clone(),
+                        connection_id: connection_id.to_string()
+                    }.render().unwrap());
+            }
+        }
 
         let mut broadcast_stream = BroadcastStream::new(rx);
         while let Some(Ok(update)) = broadcast_stream.next().await {
@@ -310,12 +323,13 @@ async fn connect_to_room(
                 },
                 Action::SetName => {
                     if update.1 == connection_id {
-                        name = Some(update.0.clone());
+                        // name = Some(update.0.clone());
                         yield Event::default()
                             .event("datastar-merge-fragments")
                             .data(ChatInputTemplate {
                                 room_id: room_id.clone(),
-                                person: update.0,
+                                person: update.0.clone(),
+                                connection_id: update.1.clone(),
                             }.render().unwrap())
                     }
                 },
@@ -326,11 +340,6 @@ async fn connect_to_room(
     Sse::new(stream)
 }
 
-// #[derive(Debug, Deserialize)]
-// struct UpdateRoomRequest {
-//     person: String,
-//     message: String,
-// }
 #[derive(Debug, Deserialize)]
 struct TypingRequest {
     message: String,
@@ -344,15 +353,13 @@ async fn update_room(
     Json(payload): Json<TypingRequest>,
 ) -> impl IntoResponse {
     // println!("typing");
-    // println!("incoming param: {:?}", room_id);
-    // println!("incoming data: {:?}", payload);
-    let connection_id = headers
-        .get("cookie")
-        .and_then(|c| c.to_str().ok())
-        .and_then(|c| c.split(';')
-            .find(|s| s.trim().starts_with("impermachat_id="))
-            .map(|s| s.trim_start_matches("impermachat_id=").to_string()))
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let connection_id = match get_connection_cookie(&headers) {
+        Some(id) => id,
+        None => {
+            println!("Uh oh!");
+            Uuid::new_v4().to_string()
+        }
+    };
 
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
@@ -373,13 +380,13 @@ async fn submit_message(
     println!("incoming param: {:?}", room_id);
     println!("incoming data: {:?}", payload);
 
-    let connection_id = headers
-        .get("cookie")
-        .and_then(|c| c.to_str().ok())
-        .and_then(|c| c.split(';')
-            .find(|s| s.trim().starts_with("impermachat_id="))
-            .map(|s| s.trim_start_matches("impermachat_id=").to_string()))
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let connection_id = match get_connection_cookie(&headers) {
+        Some(id) => id,
+        None => {
+            println!("Uh oh!");
+            Uuid::new_v4().to_string()
+        }
+    };
 
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
@@ -402,6 +409,7 @@ struct SetNameRequest {
 pub struct ChatInputTemplate {
     room_id: String,
     person: String,
+    connection_id: String,
 }
 #[derive(Template)]
 #[template(path = "set_name.html")]
@@ -432,21 +440,22 @@ async fn set_name(
     println!("incoming param: {:?}", room_id);
     println!("incoming data: {:?}", payload);
 
-    let connection_id = headers
-        .get("cookie")
-        .and_then(|c| c.to_str().ok())
-        .and_then(|c| c.split(';')
-            .find(|s| s.trim().starts_with("impermachat_id="))
-            .map(|s| s.trim_start_matches("impermachat_id=").to_string()))
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let connection_id = match get_connection_cookie(&headers) {
+        Some(id) => id,
+        None => {
+            println!("Uh oh!");
+            Uuid::new_v4().to_string()
+        }
+    };
 
     let event = {
         let mut rooms = state.rooms.lock().await;
         if let Some(room) = rooms.get_mut(&room_id) {
-            if !room.people.contains_key(&payload.name) {
-                room.people.insert(payload.name.clone(), connection_id.clone());
+            if !room.name_to_id.contains_key(&payload.name) {
+                room.name_to_id.insert(payload.name.clone(), connection_id.clone());
+                room.id_to_name.insert(connection_id.clone(), payload.name.clone());
                 if let Err(e) = room.tx.send((
-                    connection_id.clone(),
+                    payload.name.clone(),
                     connection_id.clone(),
                     Action::SetName,
                 )) {

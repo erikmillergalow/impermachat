@@ -1,38 +1,6 @@
-/* :root { */
-/**/
-/*     /* daisyui everforest hard */ */
-/*     --color-base-100: oklch(29.65% 0.0134 239.04); */
-/*     --color-base-200: oklch(25.24% 0.0092 234.1); */
-/*     --color-base-300: oklch(33.31% 0.0152 223.98); */
-/*     --color-base-content: oklch(82.99% 0.0405 86.05); */
-/*     --color-primary: oklch(40.08% 0.0292 231.33); */
-/*     --color-primary-content: oklch(82.99% 0.0405 86.05); */
-/*     --color-secondary: oklch(36.9% 0.0212 354.73); */
-/*     --color-secondary-content: oklch(82.99% 0.0405 86.05); */
-/*     --color-accent: oklch(45.98% 0.0157 178.86); */
-/*     --color-accent-content: oklch(82.99% 0.0405 86.05); */
-/*     --color-neutral: oklch(36.78% 0.0149 223.89); */
-/*     --color-neutral-content: oklch(82.99% 0.0405 86.05); */
-/*     --color-info: oklch(74.87% 0.0631 185.49); */
-/*     --color-info-content: oklch(25.24% 0.0092 234.1); */
-/*     --color-success: oklch(77.32% 0.0906 125.78); */
-/*     --color-success-content: oklch(25.24% 0.0092 234.1); */
-/*     --color-warning: oklch(80.81% 0.0863 83.7); */
-/*     --color-warning-content: oklch(25.24% 0.0092 234.1); */
-/*     --color-error: oklch(70.86% 0.1285 19.62); */
-/*     --color-error-content: oklch(25.24% 0.0092 234.1); */
-/*     --radius-selector: 0.25rem; */
-/*     --radius-field: 0.25rem; */
-/*     --radius-box: 0.25rem; */
-/*     --size-selector: 0.25rem; */
-/*     --size-field: 0.25rem; */
-/*     --border: 2px; */
-/*     --depth: 1; */
-/*     --noise: 0; */
-/**/
-/*     /* utility */ */
-/*     --spacing: 0.25rem; */
-/* } */
+body {
+    --density: 0.5;
+}
 
 .min-h-screen {
     min-height: 100vh;

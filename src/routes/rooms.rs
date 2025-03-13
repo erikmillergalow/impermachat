@@ -67,9 +67,9 @@ pub fn router() -> Router<()> {
     Router::new()
         .route("/room/:room_id", get(render_room))
         .nest("/room/:room_id", sse_router)
-        .route("/room/:room_id/live/:person", post(update_room))
-        .route("/room/:room_id/submit/:person", post(submit_message))
-        .route("/room/:room_id/name/:connection_id", post(set_name))
+        .route("/room/:room_id/live", post(update_room))
+        .route("/room/:room_id/submit", post(submit_message))
+        .route("/room/:room_id/name", post(set_name))
         .layer(ServiceBuilder::new().layer(middleware::from_fn(ensure_uid)))
         .with_state(rooms)
 }
@@ -125,17 +125,18 @@ async fn render_room(
     if let Some(room) = rooms.get_mut(&room_id) {
         RoomTemplate{
             room_id: room_id.clone(),
-            messages: room.data.clone(),
+            messages: room.message_history.clone(),
             person: room.join_count,
         }
     } else {
         let (tx, _rx) = broadcast::channel(100);
         rooms.insert(room_id.clone(), Room{
             tx,
-            data: Vec::new(),
+            message_history: Vec::new(),
             join_count: 1,
             name_to_id: HashMap::new(),
             id_to_name: HashMap::new(),
+            typing_state: HashMap::new(),
         });
         RoomTemplate{
             room_id: room_id.clone(),
@@ -167,7 +168,8 @@ enum Action {
 #[derive(Clone)]
 struct Room {
     tx: broadcast::Sender<(String, String, Action)>,
-    data: Vec<(String, String)>,
+    message_history: Vec<(String, String)>,
+    typing_state: HashMap<String, String>,
     join_count: u32,
     name_to_id: HashMap<String, String>,
     id_to_name: HashMap<String, String>,
@@ -176,11 +178,6 @@ struct Room {
 #[derive(Debug, Deserialize)]
 struct RoomParams {
     room_id: String,
-}
-#[derive(Debug, Deserialize)]
-struct RoomPersonParams {
-    room_id: String,
-    person: String,
 }
 
 #[derive(Template)]
@@ -197,10 +194,15 @@ pub struct SubmitTemplate {
 }
 
 #[derive(Template)]
+#[template(path = "typing_messages.html")]
+pub struct TypingTemplate {
+    messages: HashMap<String, String>,
+}
+
+#[derive(Template)]
 #[template(path = "init_name.html")]
 pub struct InitNameTemplate {
     room_id: String,
-    connection_id: String,
 }
 
 fn get_connection_cookie(headers: &HeaderMap) -> Option<String> {
@@ -252,10 +254,11 @@ async fn connect_to_room(
             let (tx, rx) = broadcast::channel(100);
             rooms.insert(room_id.clone(), Room{
                 tx,
-                data: Vec::new(),
+                message_history: Vec::new(),
                 join_count: 1,
                 name_to_id: HashMap::new(),
                 id_to_name: HashMap::new(),
+                typing_state: HashMap::new(),
             });
             rx
         }
@@ -273,7 +276,7 @@ async fn connect_to_room(
         yield Event::default()
             .event("datastar-merge-fragments")
             .data(SubmitTemplate {
-                    messages: room.data.clone(),
+                    messages: room.message_history.clone(),
             }.render().unwrap());
 
         // let person_name = match 
@@ -292,7 +295,6 @@ async fn connect_to_room(
                     .event("datastar-merge-fragments")
                     .data(InitNameTemplate {
                         room_id: room_id.clone(),
-                        connection_id: connection_id.to_string()
                     }.render().unwrap());
             }
         }
@@ -304,12 +306,14 @@ async fn connect_to_room(
 
             match update.2 {
                 Action::Typing => {
-                    yield Event::default()
-                        .event("datastar-merge-fragments")
-                        .data(MessageTemplate {
-                                message: update.1,
-                                person: update.0,
-                        }.render().unwrap());
+                    let mut rooms = state.rooms.lock().await;
+                    if let Some(room) = rooms.get_mut(&room_id) {
+                        yield Event::default()
+                            .event("datastar-merge-fragments")
+                            .data(TypingTemplate {
+                                messages: room.typing_state.clone(),
+                            }.render().unwrap());
+                    }
                 },
                 Action::Send => {
                     let mut rooms = state.rooms.lock().await;
@@ -317,8 +321,14 @@ async fn connect_to_room(
                         yield Event::default()
                             .event("datastar-merge-fragments")
                             .data(SubmitTemplate {
-                                messages: room.data.clone(),
+                                messages: room.message_history.clone(),
                             }.render().unwrap());
+                    }
+                    // clear user chat input
+                    if update.0 == connection_id {
+                        yield Event::default()
+                            .event("datastar-merge-signals")
+                            .data("signals {message: ''}")
                     }
                 },
                 Action::SetName => {
@@ -349,7 +359,7 @@ struct TypingRequest {
 async fn update_room(
     headers: HeaderMap,
     State(state): State<Arc<AllRooms>>,
-    Path(RoomPersonParams { room_id, person }): Path<RoomPersonParams>,
+    Path(RoomParams { room_id }): Path<RoomParams>,
     Json(payload): Json<TypingRequest>,
 ) -> impl IntoResponse {
     // println!("typing");
@@ -363,7 +373,9 @@ async fn update_room(
 
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
-        if let Err(e) = room.tx.send((connection_id, payload.message, Action::Typing)) {
+        let person_name = room.id_to_name.get(&connection_id).cloned().expect("Person should have a name");
+        room.typing_state.insert(String::from(person_name.clone()), payload.message.clone());
+        if let Err(e) = room.tx.send((connection_id.clone(), payload.message, Action::Typing)) {
             println!("Error broadcasting: {}", e);
         }
     }
@@ -373,7 +385,7 @@ async fn update_room(
 async fn submit_message(
     headers: HeaderMap,
     State(state): State<Arc<AllRooms>>,
-    Path(RoomPersonParams { room_id, person }): Path<RoomPersonParams>,
+    Path(RoomParams { room_id }): Path<RoomParams>,
     Json(payload): Json<TypingRequest>,
 ) -> impl IntoResponse {
     println!("submit");
@@ -388,15 +400,22 @@ async fn submit_message(
         }
     };
 
+
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
-        room.data.push((person.clone().to_string(), payload.message.clone()));
-        if let Err(e) = room.tx.send((connection_id, payload.message, Action::Send)) {
+        // replace these expects() with a new error broadcast event handler as to not crash the
+        // entire server
+        let person_name = room.id_to_name.get(&connection_id).cloned().expect("Person should have a name");
+        room.message_history.push((person_name.clone(), payload.message.clone()));
+        room.typing_state.insert(String::from(person_name.clone()), String::from(""));
+        if let Err(e) = room.tx.send((connection_id.clone(), payload.message, Action::Send)) {
+            println!("Error broadcasting: {}", e);
+        }
+        if let Err(e) = room.tx.send((connection_id.clone(), String::from(""), Action::Typing)) {
             println!("Error broadcasting: {}", e);
         }
     }
     StatusCode::OK
-    // Ok(())
 }
 
 
@@ -419,11 +438,6 @@ pub struct SetNameTemplate {
     message: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct SetNameParams {
-    room_id: String,
-    connection_id: String,
-}
 #[derive(Template)]
 #[template(path = "status_message.html")]
 pub struct StatusMessageTemplate {
@@ -433,7 +447,7 @@ pub struct StatusMessageTemplate {
 async fn set_name(
     headers: HeaderMap,
     State(state): State<Arc<AllRooms>>,
-    Path(SetNameParams { room_id, connection_id }): Path<SetNameParams>,
+    Path(RoomParams { room_id }): Path<RoomParams>,
     Json(payload): Json<SetNameRequest>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     println!("submit");

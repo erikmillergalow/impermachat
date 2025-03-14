@@ -31,12 +31,15 @@ mod post {
     #[derive(Debug, Clone, Deserialize)]
     pub struct CreateRoomForm {
         pub room_name: String,
+        pub hours: u64,
+        pub minutes: u64,
     }
 
     pub async fn create_room(
         Form(create_room_form): Form<CreateRoomForm>,
     ) -> impl IntoResponse {
-        let room_path = format!("/room/{}", create_room_form.room_name);
+        let room_path = format!("/room/{}?hours={}&minutes={}", create_room_form.room_name, create_room_form.hours, create_room_form.minutes);
+        println!("{}", room_path);
         Redirect::to(&room_path).into_response()
     }
 }

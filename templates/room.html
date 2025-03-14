@@ -14,8 +14,11 @@
         <div class="nav-right">
             <a class="">Room: {{ room_id }}</a>
         </div>
+        <div class="nav-left" data-signals-remaining="30">
+            <p data-text="$remaining"></p>
+        </div>
     </nav>
-    <div class="chat-container">
+    <div id="chat-container" class="chat-container">
         <div class="chat-half">
             <p class="chat-half-title">Chat log</p>
             <div id="room-messages" class="room-messages" data-on-load="@get('/room/{{ room_id }}/connect')">

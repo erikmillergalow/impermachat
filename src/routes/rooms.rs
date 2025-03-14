@@ -1,12 +1,19 @@
 use std::{
     sync::Arc,
     convert::Infallible,
+    time::Instant,
+    collections::HashMap,
 };
 use http::HeaderValue;
-use std::collections::HashMap;
-use tokio::sync::{
-    Mutex,
-    broadcast,
+use tokio::{
+    sync::{
+        Mutex,
+        broadcast,
+    },
+    time::{
+        Duration,
+        sleep,
+    },
 };
 use askama::Template;
 use axum::{
@@ -19,6 +26,7 @@ use axum::{
         Path,
         State,
         Json,
+        Query,
     },
     response::{
         IntoResponse,
@@ -27,6 +35,7 @@ use axum::{
             Sse,
         },
         Response,
+        Redirect,
     },
     http::{
         Request,
@@ -88,6 +97,16 @@ fn name_to_color(name: &str) -> String {
     format!("#{:02x}{:02x}{:02x}", r, g, b)
 }
 
+fn format_time(remaining: Duration) -> String {
+    let total_seconds = remaining.as_secs();
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let seconds = total_seconds % 60;
+
+    format!("{:02}:{:02}:{:02} remaining...", hours, minutes, seconds)
+
+}
+
 async fn ensure_uid(
     request: Request<Body>,
     next: Next,
@@ -125,24 +144,27 @@ async fn ensure_uid(
 #[template(path="room.html")]
 pub struct RoomTemplate {
     room_id: String,
-    messages: Vec<Message>,
-    person: u32,
 }
 
 async fn render_room(
     Path(RoomParams { room_id }): Path<RoomParams>,
+    Query(ExpirationParams { hours, minutes }): Query<ExpirationParams>,
     State(state): State<Arc<AllRooms>>,
-) -> RoomTemplate { 
+) -> impl IntoResponse { 
     println!("room id: {room_id}");
+    println!("hours id: {:?}", hours);
+    println!("minutes: {:?}", minutes);
 
     let mut rooms = state.rooms.lock().await;
-    if let Some(room) = rooms.get_mut(&room_id) {
+    if let Some(_room) = rooms.get_mut(&room_id) {
         RoomTemplate{
             room_id: room_id.clone(),
-            messages: room.message_history.clone(),
-            person: room.join_count,
-        }
+        }.into_response()
     } else {
+        if hours.is_none() && minutes.is_none() {
+            return Redirect::to("/").into_response();
+        }
+
         let (tx, _rx) = broadcast::channel(100);
         rooms.insert(room_id.clone(), Room{
             tx,
@@ -152,12 +174,11 @@ async fn render_room(
             id_to_name: HashMap::new(),
             name_to_color: HashMap::new(),
             typing_state: HashMap::new(),
+            expiration: Instant::now() + Duration::from_secs(hours.unwrap_or(0) * 60 * 60) + Duration::from_secs(minutes.unwrap_or(1) * 60),
         });
         RoomTemplate{
             room_id: room_id.clone(),
-            messages: Vec::new(),
-            person: 1,
-        }
+        }.into_response()
     }
 }
 
@@ -166,30 +187,61 @@ pub struct AllRooms {
 }
 impl AllRooms {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self {
-            rooms: Mutex::new(HashMap::new()),
-        })
-        // let rooms = Arc::new(Self {
+        // Arc::new(Self {
         //     rooms: Mutex::new(HashMap::new()),
-        // });
-        //
-        // let rooms_cleanup = rooms.clone();
-        // tokio::spawn(async move {
-        //     cleanup_rooms(rooms_cleanup).await;
-        // });
-        //
-        // rooms
+        // })
+        let rooms = Arc::new(Self {
+            rooms: Mutex::new(HashMap::new()),
+        });
+
+        let rooms_cleanup = rooms.clone();
+        tokio::spawn(async move {
+            cleanup_rooms(rooms_cleanup).await;
+        });
+
+        rooms
     }
 }
 
+async fn cleanup_rooms(all_rooms: Arc<AllRooms>) {
+    loop {
+        sleep(Duration::from_secs(1)).await;
 
+        let mut rooms = all_rooms.rooms.lock().await;
+        let mut to_remove = Vec::new();
+
+        for (room_id, room) in rooms.iter_mut() {
+            if Instant::now() > room.expiration {
+                // broadcast room shutdown
+                let _ = room.tx.send((
+                    "System".to_string(),
+                    "Room shutting down".to_string(),
+                    Action::ShutdownRoom,
+                ));
+                to_remove.push(room_id.clone());
+            } else {
+                let _ = room.tx.send((
+                    "System".to_string(),
+                    "Room shutting down".to_string(),
+                    Action::UpdateTime,
+                ));
+            }
+        }
+
+        for room_id in to_remove {
+            rooms.remove(&room_id);
+            println!("Removed room: {}", room_id);
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 enum Action {
     Typing,
     Send,
     SetName,
-    // ShutdownRoom,
+    ShutdownRoom,
+    UpdateTime,
 }
 
 // #[derive(Default)]
@@ -197,14 +249,12 @@ enum Action {
 struct Room {
     tx: broadcast::Sender<(String, String, Action)>,
     message_history: Vec<Message>,
-    // message_history: Vec<(String, String)>,
     typing_state: HashMap<String, Message>,
-    // typing_state: HashMap<String, String>,
     join_count: u32,
     name_to_id: HashMap<String, String>,
     id_to_name: HashMap<String, String>,
     name_to_color: HashMap<String, String>,
-    // expiration: Instant,
+    expiration: Instant,
 }
 
 #[derive(Clone)]
@@ -220,12 +270,24 @@ struct RoomParams {
     room_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct ExpirationParams {
+    #[serde(default)]
+    hours: Option<u64>,
+    #[serde(default)]
+    minutes: Option<u64>,
+}
+
 #[derive(Template)]
 #[template(path = "message.html")]
 pub struct MessageTemplate {
     message: String,
     person: String,
 }
+
+#[derive(Template)]
+#[template(path = "shutdown_room.html")]
+pub struct ShutdownTemplate {}
 
 #[derive(Template)]
 #[template(path = "submit_message.html")]
@@ -256,8 +318,6 @@ fn get_connection_cookie(headers: &HeaderMap) -> Option<String> {
 
 #[axum::debug_handler]
 async fn connect_to_room(
-    // cookies: TypedHeader<Cookie>,
-    // jar: CookieJar,
     headers: HeaderMap,
     Path(RoomParams { room_id }): Path<RoomParams>,
     State(state): State<Arc<AllRooms>>,
@@ -299,6 +359,7 @@ async fn connect_to_room(
                 id_to_name: HashMap::new(),
                 name_to_color: HashMap::new(),
                 typing_state: HashMap::new(),
+                expiration: Instant::now() + Duration::from_secs(30),
             });
             rx
         }
@@ -390,6 +451,20 @@ async fn connect_to_room(
                             }.render().unwrap())
                     }
                 },
+                Action::ShutdownRoom => {
+                    yield Event::default()
+                        .event("datastar-merge-fragments")
+                        .data(ShutdownTemplate {
+                        }.render().unwrap());
+                },
+                Action::UpdateTime => {
+                    let mut rooms = state.rooms.lock().await;
+                    if let Some(room) = rooms.get_mut(&room_id) {
+                        yield Event::default()
+                            .event("datastar-merge-signals")
+                            .data(format!("signals {{remaining: '{}'}}", format_time(room.expiration.duration_since(Instant::now()))));
+                    }
+                },
             }
         }
     };
@@ -409,7 +484,6 @@ async fn update_room(
     Path(RoomParams { room_id }): Path<RoomParams>,
     Json(payload): Json<TypingRequest>,
 ) -> impl IntoResponse {
-    // println!("typing");
     let connection_id = match get_connection_cookie(&headers) {
         Some(id) => id,
         None => {
@@ -440,10 +514,6 @@ async fn submit_message(
     Path(RoomParams { room_id }): Path<RoomParams>,
     Json(payload): Json<TypingRequest>,
 ) -> impl IntoResponse {
-    println!("submit");
-    println!("incoming param: {:?}", room_id);
-    println!("incoming data: {:?}", payload);
-
     let connection_id = match get_connection_cookie(&headers) {
         Some(id) => id,
         None => {

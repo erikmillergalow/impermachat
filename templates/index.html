@@ -6,14 +6,36 @@
         <div class="">
             <h1 class="">ImpermaChat</h1>
             <p class="">
-                Quick and easy realtime chat rooms.
+                Quick and easy ephemeral realtime chat rooms. Watch as other people type.
             </p>
         </div>
         <div class="">
             <form action="/" method="post" class="">
                 <fieldset class="fieldset">
-                    <label class="fieldset-label">Enter room</label>
-                    <input type="text" name="room_name" placeholder="Choose a room name..." />
+                    <label for="room_name" class="fieldset-label">Enter room</label>
+                    <input id="room_name" type="text" name="room_name" placeholder="Choose a room name..." />
+                    <label for="hours" class="fieldset-label">Hours:</label>
+                    <select id="hours" name="hours">
+                        <option value="0">0</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="12">12</option>
+                    </select>
+                    <label for="minutes" class="fieldset-label">Minutes:</label>
+                    <select id="minutes" name="minutes">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="15">15</option>
+                        <option value="30">30</option>
+                        <option value="45">45</option>
+                    </select>
                     <button class="btn btn-neutral mt-4">Enter room</button>
                 </fieldset>
             </div>

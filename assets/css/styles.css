@@ -56,6 +56,10 @@ nav {
     flex: none;
 }
 
+.shutdown-message {
+    text-align: center;
+}
+
 nav ul {
     padding-inline: 1;
 }

@@ -169,14 +169,27 @@ impl AllRooms {
         Arc::new(Self {
             rooms: Mutex::new(HashMap::new()),
         })
+        // let rooms = Arc::new(Self {
+        //     rooms: Mutex::new(HashMap::new()),
+        // });
+        //
+        // let rooms_cleanup = rooms.clone();
+        // tokio::spawn(async move {
+        //     cleanup_rooms(rooms_cleanup).await;
+        // });
+        //
+        // rooms
     }
 }
+
+
 
 #[derive(Clone, Debug)]
 enum Action {
     Typing,
     Send,
     SetName,
+    // ShutdownRoom,
 }
 
 // #[derive(Default)]
@@ -191,6 +204,7 @@ struct Room {
     name_to_id: HashMap<String, String>,
     id_to_name: HashMap<String, String>,
     name_to_color: HashMap<String, String>,
+    // expiration: Instant,
 }
 
 #[derive(Clone)]
@@ -344,12 +358,19 @@ async fn connect_to_room(
                 Action::Send => {
                     let mut rooms = state.rooms.lock().await;
                     if let Some(room) = rooms.get_mut(&room_id) {
+                        let rendered_submit = SubmitTemplate {
+                            messages: room.message_history.clone(),
+                            connection_id: connection_id.clone(),
+                        }.render().unwrap();
+
+                        let mut raw_event = String::from("");
+                        for line in rendered_submit.lines() {
+                            raw_event.push_str(&format!("fragments {}\n", line));
+                        }
+
                         yield Event::default()
                             .event("datastar-merge-fragments")
-                            .data(SubmitTemplate {
-                                messages: room.message_history.clone(),
-                                connection_id: connection_id.clone(),
-                            }.render().unwrap());
+                            .data(raw_event);
                     }
                     // clear user chat input
                     if update.0 == connection_id {

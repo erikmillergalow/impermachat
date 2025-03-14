@@ -126,7 +126,6 @@ async fn ensure_uid(
 pub struct RoomTemplate {
     room_id: String,
     messages: Vec<Message>,
-    // messages: Vec<(String, String)>,
     person: u32,
 }
 

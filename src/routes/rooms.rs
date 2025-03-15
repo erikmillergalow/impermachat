@@ -187,9 +187,6 @@ pub struct AllRooms {
 }
 impl AllRooms {
     pub fn new() -> Arc<Self> {
-        // Arc::new(Self {
-        //     rooms: Mutex::new(HashMap::new()),
-        // })
         let rooms = Arc::new(Self {
             rooms: Mutex::new(HashMap::new()),
         });
@@ -213,18 +210,16 @@ async fn cleanup_rooms(all_rooms: Arc<AllRooms>) {
         for (room_id, room) in rooms.iter_mut() {
             if Instant::now() > room.expiration {
                 // broadcast room shutdown
-                let _ = room.tx.send((
-                    "System".to_string(),
-                    "Room shutting down".to_string(),
-                    Action::ShutdownRoom,
-                ));
+                let _ = room.tx.send(ActionEvent {
+                    connection_id: "System".to_string(),
+                    action: Action::ShutdownRoom,
+                });
                 to_remove.push(room_id.clone());
             } else {
-                let _ = room.tx.send((
-                    "System".to_string(),
-                    "Room shutting down".to_string(),
-                    Action::UpdateTime,
-                ));
+                let _ = room.tx.send(ActionEvent {
+                    connection_id: "System".to_string(),
+                    action: Action::UpdateTime,
+                });
             }
         }
 
@@ -242,12 +237,18 @@ enum Action {
     SetName,
     ShutdownRoom,
     UpdateTime,
+    MajorError,
 }
 
-// #[derive(Default)]
+#[derive(Clone)]
+struct ActionEvent {
+    connection_id: String,
+    action: Action,
+}
+
 #[derive(Clone)]
 struct Room {
-    tx: broadcast::Sender<(String, String, Action)>,
+    tx: broadcast::Sender<ActionEvent>,
     message_history: Vec<Message>,
     typing_state: HashMap<String, Message>,
     join_count: u32,
@@ -307,6 +308,11 @@ pub struct TypingTemplate {
 pub struct InitNameTemplate {
     room_id: String,
 }
+
+#[derive(Template)]
+#[template(path = "major_error.html")]
+pub struct MajorErrorTemplate {}
+
 
 fn get_connection_cookie(headers: &HeaderMap) -> Option<String> {
     headers.get("cookie")
@@ -381,7 +387,25 @@ async fn connect_to_room(
                     connection_id: connection_id.clone(),
             }.render().unwrap());
 
-        // let person_name = match 
+        yield Event::default()
+            .event("datastar-merge-fragments")
+            .data(TypingTemplate {
+                messages: room.typing_state.clone(),
+            }.render().unwrap());
+
+        // populate existing messages
+        let initial_messages = SubmitTemplate {
+            messages: room.message_history.clone(),
+            connection_id: connection_id.clone(),
+        }.render().unwrap();
+        let mut raw_event = String::from("");
+        for line in initial_messages.lines() {
+            raw_event.push_str(&format!("fragments {}\n", line));
+        }
+        yield Event::default()
+            .event("datastar-merge-fragments")
+            .data(raw_event);
+
         match room.id_to_name.get(&connection_id) {
             Some(name) => {
                 yield Event::default()
@@ -401,11 +425,9 @@ async fn connect_to_room(
         }
 
         let mut broadcast_stream = BroadcastStream::new(rx);
-        while let Some(Ok(update)) = broadcast_stream.next().await {
-            println!("Processing update: {:?} for room: {}", update.2, room_id);
-            println!("New broadcast!");
+        while let Some(Ok(event)) = broadcast_stream.next().await {
 
-            match update.2 {
+            match event.action {
                 Action::Typing => {
                     let mut rooms = state.rooms.lock().await;
                     if let Some(room) = rooms.get_mut(&room_id) {
@@ -432,23 +454,29 @@ async fn connect_to_room(
                         yield Event::default()
                             .event("datastar-merge-fragments")
                             .data(raw_event);
-                    }
-                    // clear user chat input
-                    if update.0 == connection_id {
-                        yield Event::default()
-                            .event("datastar-merge-signals")
-                            .data("signals {message: ''}")
+
+                        // clear user chat input
+                        if event.connection_id == connection_id {
+                            yield Event::default()
+                                .event("datastar-merge-signals")
+                                .data("signals {message: ''}")
+                        }
                     }
                 },
                 Action::SetName => {
-                    if update.1 == connection_id {
+                    if event.connection_id == connection_id {
                         // name = Some(update.0.clone());
-                        yield Event::default()
-                            .event("datastar-merge-fragments")
-                            .data(ChatInputTemplate {
-                                room_id: room_id.clone(),
-                                person: update.0.clone(),
-                            }.render().unwrap())
+                        let rooms = state.rooms.lock().await;
+                        if let Some(room) = rooms.get(&room_id) {
+                            if let Some(name) = room.id_to_name.get(&connection_id) {
+                                yield Event::default()
+                                    .event("datastar-merge-fragments")
+                                    .data(ChatInputTemplate {
+                                        room_id: room_id.clone(),
+                                        person: name.clone(),
+                                    }.render().unwrap())
+                            }
+                        }
                     }
                 },
                 Action::ShutdownRoom => {
@@ -465,6 +493,13 @@ async fn connect_to_room(
                             .data(format!("signals {{remaining: '{}'}}", format_time(room.expiration.duration_since(Instant::now()))));
                     }
                 },
+                Action::MajorError => {
+                    if event.connection_id == connection_id {
+                        yield Event::default()
+                            .event("datastar-merge-fragments")
+                            .data(MajorErrorTemplate{}.render().unwrap());
+                    }
+                }
             }
         }
     };
@@ -484,24 +519,39 @@ async fn update_room(
     Path(RoomParams { room_id }): Path<RoomParams>,
     Json(payload): Json<TypingRequest>,
 ) -> impl IntoResponse {
-    let connection_id = match get_connection_cookie(&headers) {
-        Some(id) => id,
-        None => {
-            println!("Uh oh!");
-            Uuid::new_v4().to_string()
-        }
-    };
-
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
-        let person_name = room.id_to_name.get(&connection_id).cloned().expect("Person should have a name");
+        let connection_id = match get_connection_cookie(&headers) {
+            Some(id) => id,
+            None => {
+                println!("Uh oh!");
+                Uuid::new_v4().to_string()
+                // if let Err(e) = room.tx.send((connection_id.clone(), "Error"))
+            }
+        };
+
+        let person_name = match room.id_to_name.get(&connection_id).cloned() {
+            Some(name) => name,
+            None => {
+                if let Err(e) = room.tx.send(ActionEvent {
+                    connection_id: connection_id.clone(),
+                    action: Action::MajorError,
+                }) {
+                    println!("Error broadcasting error event {}", e);
+                }
+                return StatusCode::OK;
+            }
+        };
         room.typing_state.insert(String::from(person_name.clone()), Message{
             name: person_name.clone(),
             content: payload.message.clone(),
             color: name_to_color(&person_name),
             connection_id: connection_id.clone(),
         });
-        if let Err(e) = room.tx.send((connection_id.clone(), payload.message, Action::Typing)) {
+        if let Err(e) = room.tx.send(ActionEvent{
+            connection_id: connection_id.clone(), 
+            action: Action::Typing
+        }) {
             println!("Error broadcasting: {}", e);
         }
     }
@@ -539,10 +589,16 @@ async fn submit_message(
             color: name_to_color(&person_name),
             connection_id: connection_id.clone(),
         });
-        if let Err(e) = room.tx.send((connection_id.clone(), payload.message, Action::Send)) {
+        if let Err(e) = room.tx.send(ActionEvent {
+            connection_id: connection_id.clone(),
+            action: Action::Send,
+        }) {
             println!("Error broadcasting: {}", e);
         }
-        if let Err(e) = room.tx.send((connection_id.clone(), String::from(""), Action::Typing)) {
+        if let Err(e) = room.tx.send(ActionEvent {
+            connection_id: connection_id.clone(),
+            action: Action::Typing,
+        }) {
             println!("Error broadcasting: {}", e);
         }
     }
@@ -580,10 +636,6 @@ async fn set_name(
     Path(RoomParams { room_id }): Path<RoomParams>,
     Json(payload): Json<SetNameRequest>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    println!("submit");
-    println!("incoming param: {:?}", room_id);
-    println!("incoming data: {:?}", payload);
-
     let connection_id = match get_connection_cookie(&headers) {
         Some(id) => id,
         None => {
@@ -599,11 +651,10 @@ async fn set_name(
                 room.name_to_id.insert(payload.name.clone(), connection_id.clone());
                 room.id_to_name.insert(connection_id.clone(), payload.name.clone());
                 room.name_to_color.insert(payload.name.clone(), name_to_color(&payload.name));
-                if let Err(e) = room.tx.send((
-                    payload.name.clone(),
-                    connection_id.clone(),
-                    Action::SetName,
-                )) {
+                if let Err(e) = room.tx.send(ActionEvent {
+                    connection_id: connection_id.clone(),
+                    action: Action::SetName,
+                }) {
                     println!("Error broadcasting name change: {}", e);
                 }
                 Event::default().data("")

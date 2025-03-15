@@ -13,7 +13,7 @@
             <form action="/" method="post" class="">
                 <fieldset class="fieldset">
                     <label for="room_name" class="fieldset-label">Enter room</label>
-                    <input id="room_name" type="text" name="room_name" placeholder="Choose a room name..." />
+                    <input id="room_name" type="text" pattern="[a-zA-Z0-9-]+" oninput="this.value = this.value.replace(/[^a-zA-Z0-9-]/g, '')" name="room_name" placeholder="Choose a room name..." />
                     <label for="hours" class="fieldset-label">Hours:</label>
                     <select id="hours" name="hours">
                         <option value="0">0</option>

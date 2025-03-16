@@ -536,9 +536,15 @@ async fn update_room(
                 return StatusCode::OK.into_response();
             }
         };
+
+        let mut new_message = payload.message.clone();
+        if payload.message.len() > MAX_MESSAGE_SIZE {
+            new_message = "This message was too long! Keep it under 4,000 characters".to_string();
+        }
+
         room.typing_state.insert(String::from(person_name.clone()), Message{
             name: person_name.clone(),
-            content: payload.message.clone(),
+            content: new_message,
             color: name_to_color(&person_name),
             connection_id: connection_id.clone(),
         });

@@ -1,2 +1,2 @@
 
-fragments <div id="typing" class="overflow:auto">{% for (person, message) in messages %}<div class="box mt-4"><div class="titlebar" style="background-color: {{ message.color }};">{{ person }}</div>{{ message.content }}</div>{% endfor %}</div>
+fragments <div id="typing" class="overflow:auto">{% for (person, message) in messages %}{% if message.connection_id != connection_id %}<div class="box mt-4"><div class="titlebar" style="background-color: {{ message.color }};">{{ person }}</div>{{ message.content }}</div>{% endif %}{% endfor %}</div>

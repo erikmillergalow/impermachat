@@ -55,6 +55,8 @@ use tokio_stream::wrappers::BroadcastStream;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower::ServiceBuilder;
 
+const MAX_MESSAGE_SIZE: usize = 4000;
+
 pub fn router() -> Router<()> {
     let rooms = AllRooms::new();
 
@@ -301,6 +303,7 @@ pub struct SubmitTemplate {
 #[template(path = "typing_messages.html")]
 pub struct TypingTemplate {
     messages: HashMap<String, Message>,
+    connection_id: String,
 }
 
 #[derive(Template)]
@@ -332,22 +335,8 @@ async fn connect_to_room(
     println!("incoming param: {:?}", room_id);
 
     // get this person's uid
-    let connection_id = match get_connection_cookie(&headers) {
-        Some(id) => id,
-        None => {
-            println!("Uh oh!");
-            Uuid::new_v4().to_string()
-            // let error_stream = try_stream! {
-            //     yield Event::default()
-            //         .event("datastar-merge-fragments")
-            //         .data(MessageTemplate {
-            //             message: "Error setting up connection_id, please refresh the page.".to_string(),
-            //             person: "System".to_string(),
-            //         }.render().unwrap());
-            // };
-            // return Sse::new(error_stream);
-        }
-    };
+    let connection_id = get_connection_cookie(&headers)
+        .expect("Middleware should have bestowed UUID by now.");
 
     // check for existing room or create one
     let rx = {
@@ -370,7 +359,7 @@ async fn connect_to_room(
             rx
         }
     };
-   
+
     let stream = try_stream! {
         // flush
         yield Event::default().data("");
@@ -387,10 +376,12 @@ async fn connect_to_room(
                     connection_id: connection_id.clone(),
             }.render().unwrap());
 
+        // render typing state
         yield Event::default()
             .event("datastar-merge-fragments")
             .data(TypingTemplate {
                 messages: room.typing_state.clone(),
+                connection_id: connection_id.clone(),
             }.render().unwrap());
 
         // populate existing messages
@@ -406,6 +397,7 @@ async fn connect_to_room(
             .event("datastar-merge-fragments")
             .data(raw_event);
 
+        // check if person has already selected a name in this room
         match room.id_to_name.get(&connection_id) {
             Some(name) => {
                 yield Event::default()
@@ -424,9 +416,9 @@ async fn connect_to_room(
             }
         }
 
+        // main handler loop to send SSE to update UI
         let mut broadcast_stream = BroadcastStream::new(rx);
         while let Some(Ok(event)) = broadcast_stream.next().await {
-
             match event.action {
                 Action::Typing => {
                     let mut rooms = state.rooms.lock().await;
@@ -435,6 +427,7 @@ async fn connect_to_room(
                             .event("datastar-merge-fragments")
                             .data(TypingTemplate {
                                 messages: room.typing_state.clone(),
+                                connection_id: connection_id.clone(),
                             }.render().unwrap());
                     }
                 },
@@ -465,7 +458,6 @@ async fn connect_to_room(
                 },
                 Action::SetName => {
                     if event.connection_id == connection_id {
-                        // name = Some(update.0.clone());
                         let rooms = state.rooms.lock().await;
                         if let Some(room) = rooms.get(&room_id) {
                             if let Some(name) = room.id_to_name.get(&connection_id) {
@@ -524,9 +516,11 @@ async fn update_room(
         let connection_id = match get_connection_cookie(&headers) {
             Some(id) => id,
             None => {
-                println!("Uh oh!");
-                Uuid::new_v4().to_string()
-                // if let Err(e) = room.tx.send((connection_id.clone(), "Error"))
+                return (
+                    StatusCode::OK,
+                    [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                    "event: datastar-merge-fragments\ndata:fragments <div id='chat-container'><h1 class='major-error-message'>Unable to find connection ID cookie - refresh to attempt to recover</h1><div class='button-center'><button class='big' onclick='window.location.reload()'>Refresh</button></div></div>\n\n"
+                ).into_response();
             }
         };
 
@@ -539,7 +533,7 @@ async fn update_room(
                 }) {
                     println!("Error broadcasting error event {}", e);
                 }
-                return StatusCode::OK;
+                return StatusCode::OK.into_response();
             }
         };
         room.typing_state.insert(String::from(person_name.clone()), Message{
@@ -555,7 +549,7 @@ async fn update_room(
             println!("Error broadcasting: {}", e);
         }
     }
-    StatusCode::OK
+    StatusCode::OK.into_response()
 }
 
 async fn submit_message(
@@ -567,19 +561,37 @@ async fn submit_message(
     let connection_id = match get_connection_cookie(&headers) {
         Some(id) => id,
         None => {
-            println!("Uh oh!");
-            Uuid::new_v4().to_string()
+            return (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                "event: datastar-merge-fragments\ndata:fragments <div id='chat-container'><h1 class='major-error-message'>Unable to find connection ID cookie - refresh to attempt to recover</h1><div class='button-center'><button class='big' onclick='window.location.reload()'>Refresh</button></div></div>\n\n"
+            ).into_response();
         }
     };
 
     let mut rooms = state.rooms.lock().await;
     if let Some(room) = rooms.get_mut(&room_id) {
-        // replace these expects() with a new error broadcast event handler as to not crash the
-        // entire server
-        let person_name = room.id_to_name.get(&connection_id).cloned().expect("Person should have a name");
+        let person_name = match room.id_to_name.get(&connection_id).cloned() {
+            Some(name) => name,
+            None => {
+                if let Err(e) = room.tx.send(ActionEvent {
+                    connection_id: connection_id.clone(),
+                    action: Action::MajorError,
+                }) {
+                    println!("Error broadcasting error event {}", e);
+                }
+                return StatusCode::OK.into_response();
+            }
+        };
+
+        let mut new_message = payload.message.clone();
+        if payload.message.len() > MAX_MESSAGE_SIZE {
+            new_message = "This message was too long! Keep it under 4,000 characters".to_string();
+        }
+
         room.message_history.push(Message{
             name: person_name.clone(),
-            content: payload.message.clone(),
+            content: new_message,
             color: name_to_color(&person_name),
             connection_id: connection_id.clone(),
         });
@@ -602,7 +614,7 @@ async fn submit_message(
             println!("Error broadcasting: {}", e);
         }
     }
-    StatusCode::OK
+    StatusCode::OK.into_response()
 }
 
 
@@ -635,49 +647,54 @@ async fn set_name(
     State(state): State<Arc<AllRooms>>,
     Path(RoomParams { room_id }): Path<RoomParams>,
     Json(payload): Json<SetNameRequest>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+) -> Response<Body> {  // Simple HTTP response
     let connection_id = match get_connection_cookie(&headers) {
         Some(id) => id,
         None => {
-            println!("Uh oh!");
-            Uuid::new_v4().to_string()
+            return (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                "event: datastar-merge-fragments\ndata: fragments <div class='error-message'>Missing connection ID cookie</div>\n\n"
+            ).into_response();
         }
     };
 
-    let event = {
-        let mut rooms = state.rooms.lock().await;
-        if let Some(room) = rooms.get_mut(&room_id) {
-            if !room.name_to_id.contains_key(&payload.name) {
-                room.name_to_id.insert(payload.name.clone(), connection_id.clone());
-                room.id_to_name.insert(connection_id.clone(), payload.name.clone());
-                room.name_to_color.insert(payload.name.clone(), name_to_color(&payload.name));
-                if let Err(e) = room.tx.send(ActionEvent {
-                    connection_id: connection_id.clone(),
-                    action: Action::SetName,
-                }) {
-                    println!("Error broadcasting name change: {}", e);
-                }
-                Event::default().data("")
-            } else {
-                Event::default()
-                    .event("datastar-merge-fragments")
-                    .data(SetNameTemplate {
-                        room_id,
-                        connection_id: connection_id.clone(),
-                        message: "Name already taken".to_string(),
-                    }.render().unwrap())
+    let mut rooms = state.rooms.lock().await;
+    if let Some(room) = rooms.get_mut(&room_id) {
+        if !room.name_to_id.contains_key(&payload.name) {
+
+            // set name if it's available
+            room.name_to_id.insert(payload.name.clone(), connection_id.clone());
+            room.id_to_name.insert(connection_id.clone(), payload.name.clone());
+            room.name_to_color.insert(payload.name.clone(), name_to_color(&payload.name));
+
+            if let Err(e) = room.tx.send(ActionEvent {
+                connection_id: connection_id.clone(),
+                action: Action::SetName,
+            }) {
+                println!("Error broadcasting name change: {}", e);
             }
+            return (StatusCode::OK, "").into_response();
         } else {
-            Event::default()
-                .event("datastar-merge-fragments")
-                .data(SetNameTemplate {
-                    room_id,
-                    connection_id: connection_id.clone(),
-                    message: "Room not found".to_string(),
-                }.render().unwrap())
-        }
-    };
+            // name already taken
+            let template = SetNameTemplate {
+                room_id,
+                connection_id: connection_id.clone(),
+                message: "Name already taken".to_string(),
+            }.render().unwrap();
 
-    let stream = stream::once(async move { Ok(event) });
-    Sse::new(stream)
+            return (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                format!("event: datastar-merge-fragments\ndata: fragments {}\n\n", template)
+            ).into_response();
+        }
+    } else {
+        // room not found
+        return (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+            "event: datastar-merge-fragments\ndata: fragments <div class='error-message'>Room not found</div>\n\n"
+        ).into_response();
+    }
 }

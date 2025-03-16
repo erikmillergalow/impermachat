@@ -33,5 +33,16 @@
             <div id="typing" class="mt-4"></div>
         </div>
     </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (window.innerWidth <= 768) {
+                const typingSection = document.querySelector('.chat-half:last-child');
+                const typingTitle = typingSection.querySelector('.chat-half-title');
+                typingTitle.addEventListener('click', function() {
+                    typingSection.classList.toggle('expanded');
+                });
+            }
+        });
+    </script>
 </body>
 </html>

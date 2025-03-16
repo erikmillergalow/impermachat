@@ -148,3 +148,57 @@ div.landing-cell {
     /* position: absolute; */
     /* bottom: 1rem; */
 }
+
+@media (max-width: 768px) {
+    .chat-container {
+        flex-direction: column;
+    }
+
+    .chat-half {
+        width: 100%;
+        max-width: 100%;
+        min-width: 100%;
+        border: none;
+        border-top: 1px solid var(--plain-fg);
+    }
+
+    .chat-half:first-child {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .chat-half:last-child {
+        flex: 0;
+        position: relative;
+    }
+
+    .chat-half:last-child .chat-half-title {
+        padding: 0.75rem;
+        margin: 0;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .chat-half:last-child .chat-half-title::after {
+        content: '▼';
+        font-size: 0.8rem;
+    }
+
+    .chat-half:last-child #typing {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease-out;
+    }
+
+    .chat-half:last-child.expanded #typing {
+        max-height: 200px;
+        overflow-y: auto;
+        padding-top: 0.5rem;
+    }
+
+    .chat-half:last-child.expanded .chat-half-title::after {
+        content: '▲';
+    }
+}

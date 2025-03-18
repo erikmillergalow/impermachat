@@ -149,6 +149,10 @@ div.landing-cell {
     /* bottom: 1rem; */
 }
 
+.message-content {
+    /* white-space: pre-wrap; */
+}
+
 @media (max-width: 768px) {
     .chat-container {
         flex-direction: column;

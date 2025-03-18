@@ -316,13 +316,20 @@ pub struct InitNameTemplate {
 #[template(path = "major_error.html")]
 pub struct MajorErrorTemplate {}
 
-
 fn get_connection_cookie(headers: &HeaderMap) -> Option<String> {
     headers.get("cookie")
         .and_then(|c| c.to_str().ok())
         .and_then(|c| c.split(';')
             .find(|s| s.trim().starts_with("impermachat_id="))
             .map(|s| s.trim_start_matches("impermachat_id=").to_string()))
+}
+
+fn create_fragments_event(rendered_template: String) -> String {
+    let mut raw_event = String::from("");
+    for line in rendered_template.lines() {
+        raw_event.push_str(&format!("fragments {}\n", line));
+    }
+    raw_event
 }
 
 #[axum::debug_handler]
@@ -423,12 +430,13 @@ async fn connect_to_room(
                 Action::Typing => {
                     let mut rooms = state.rooms.lock().await;
                     if let Some(room) = rooms.get_mut(&room_id) {
+                        let rendered_typing = TypingTemplate {
+                            messages: room.typing_state.clone(),
+                            connection_id: connection_id.clone(),
+                        }.render().unwrap();
                         yield Event::default()
                             .event("datastar-merge-fragments")
-                            .data(TypingTemplate {
-                                messages: room.typing_state.clone(),
-                                connection_id: connection_id.clone(),
-                            }.render().unwrap());
+                            .data(create_fragments_event(rendered_typing));
                     }
                 },
                 Action::Send => {
@@ -439,14 +447,9 @@ async fn connect_to_room(
                             connection_id: connection_id.clone(),
                         }.render().unwrap();
 
-                        let mut raw_event = String::from("");
-                        for line in rendered_submit.lines() {
-                            raw_event.push_str(&format!("fragments {}\n", line));
-                        }
-
                         yield Event::default()
                             .event("datastar-merge-fragments")
-                            .data(raw_event);
+                            .data(create_fragments_event(rendered_submit));
 
                         // clear user chat input
                         if event.connection_id == connection_id {
@@ -454,13 +457,22 @@ async fn connect_to_room(
                                 .event("datastar-merge-signals")
                                 .data("signals {message: ''}")
                         }
+
+                        let rendered_typing = TypingTemplate {
+                            messages: room.typing_state.clone(),
+                            connection_id: connection_id.clone(),
+                        }.render().unwrap();
+                        let typing_converted = create_fragments_event(rendered_typing);
+                        yield Event::default()
+                            .event("datastar-merge-fragments")
+                            .data(typing_converted);
                     }
                 },
                 Action::SetName => {
-                    if event.connection_id == connection_id {
-                        let rooms = state.rooms.lock().await;
-                        if let Some(room) = rooms.get(&room_id) {
-                            if let Some(name) = room.id_to_name.get(&connection_id) {
+                    let rooms = state.rooms.lock().await;
+                    if let Some(room) = rooms.get(&room_id) {
+                        if let Some(name) = room.id_to_name.get(&connection_id) {
+                            if event.connection_id == connection_id {
                                 yield Event::default()
                                     .event("datastar-merge-fragments")
                                     .data(ChatInputTemplate {
@@ -468,7 +480,17 @@ async fn connect_to_room(
                                         person: name.clone(),
                                     }.render().unwrap())
                             }
-                        }
+
+                            // render new person's typing box
+                            let rendered_typing = TypingTemplate {
+                                messages: room.typing_state.clone(),
+                                connection_id: connection_id.clone(),
+                            }.render().unwrap();
+                            let typing_converted = create_fragments_event(rendered_typing);
+                            yield Event::default()
+                                .event("datastar-merge-fragments")
+                                .data(typing_converted);
+                            }
                     }
                 },
                 Action::ShutdownRoom => {
@@ -538,6 +560,7 @@ async fn update_room(
         };
 
         let mut new_message = payload.message.clone();
+        println!("new_message: {}", new_message);
         if payload.message.len() > MAX_MESSAGE_SIZE {
             new_message = "This message was too long! Keep it under 4,000 characters".to_string();
         }
@@ -613,12 +636,6 @@ async fn submit_message(
         }) {
             println!("Error broadcasting: {}", e);
         }
-        if let Err(e) = room.tx.send(ActionEvent {
-            connection_id: connection_id.clone(),
-            action: Action::Typing,
-        }) {
-            println!("Error broadcasting: {}", e);
-        }
     }
     StatusCode::OK.into_response()
 }
@@ -673,6 +690,13 @@ async fn set_name(
             room.name_to_id.insert(payload.name.clone(), connection_id.clone());
             room.id_to_name.insert(connection_id.clone(), payload.name.clone());
             room.name_to_color.insert(payload.name.clone(), name_to_color(&payload.name));
+
+            room.typing_state.insert(String::from(payload.name.clone()), Message {
+                name: payload.name.clone(),
+                content: "".to_string(),
+                color: name_to_color(&payload.name),
+                connection_id: connection_id.clone(),
+            });
 
             if let Err(e) = room.tx.send(ActionEvent {
                 connection_id: connection_id.clone(),

@@ -1,2 +1,5 @@
-
-fragments <div id="typing" class="overflow:auto">{% for (person, message) in messages %}{% if message.connection_id != connection_id %}<div class="box mt-4"><div class="titlebar" style="background-color: {{ message.color }};">{{ person }}</div>{{ message.content }}</div>{% endif %}{% endfor %}</div>
+<div id="typing" class="overflow:auto">{% for (person, message) in messages %}{% if message.connection_id != connection_id %}
+    <div class="box mt-4"><div class="titlebar" style="background-color: {{ message.color }};">
+        {{ person }}
+    </div>{{ message.content|escape|linebreaksbr|safe }}</div>{% endif %}{% endfor %}
+</div>

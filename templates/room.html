@@ -11,7 +11,8 @@
 <body class="chat-body">
     <nav class="navbar">
         <div class="nav-right">
-            <a class="">Room: {{ room_id }}</a>
+            <a id="header-title" onclick="copyRoomURL();">Room: {{ room_id }}</a>
+            <p id="copy-message">Room URL copied!</p>
         </div>
         <div class="nav-left" data-signals-remaining="30">
             <p data-text="$remaining"></p>
@@ -42,6 +43,15 @@
                 });
             }
         });
+
+        function copyRoomURL() {
+            navigator.clipboard.writeText(window.location.origin + window.location.pathname);
+            const copyMessage = document.getElementById('copy-message');
+            copyMessage.style.display = 'block';
+            setTimeout(() => {
+                copyMessage.style.display = 'none';
+            }, 2500);
+        }
     </script>
 </body>
 </html>

@@ -52,7 +52,6 @@ mod post {
         Form(create_room_form): Form<CreateRoomForm>,
     ) -> impl IntoResponse {
         let room_path = format!("/room/{}?hours={}&minutes={}", sanitize_room_name(&create_room_form.room_name), create_room_form.hours, create_room_form.minutes);
-        println!("{}", room_path);
 
         if create_room_form.room_name.trim().is_empty() {
             return IndexTemplate{

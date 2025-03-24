@@ -153,10 +153,6 @@ async fn render_room(
     Query(ExpirationParams { hours, minutes }): Query<ExpirationParams>,
     State(state): State<Arc<AllRooms>>,
 ) -> impl IntoResponse { 
-    println!("room id: {room_id}");
-    println!("hours id: {:?}", hours);
-    println!("minutes: {:?}", minutes);
-
     let mut rooms = state.rooms.lock().await;
     if let Some(_room) = rooms.get_mut(&room_id) {
         RoomTemplate{
@@ -227,7 +223,6 @@ async fn cleanup_rooms(all_rooms: Arc<AllRooms>) {
 
         for room_id in to_remove {
             rooms.remove(&room_id);
-            println!("Removed room: {}", room_id);
         }
     }
 }
@@ -338,8 +333,6 @@ async fn connect_to_room(
     Path(RoomParams { room_id }): Path<RoomParams>,
     State(state): State<Arc<AllRooms>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    println!("connect to room");
-    println!("incoming param: {:?}", room_id);
 
     // get this person's uid
     let connection_id = get_connection_cookie(&headers)
@@ -560,7 +553,6 @@ async fn update_room(
         };
 
         let mut new_message = payload.message.clone();
-        println!("new_message: {}", new_message);
         if payload.message.len() > MAX_MESSAGE_SIZE {
             new_message = "This message was too long! Keep it under 4,000 characters".to_string();
         }

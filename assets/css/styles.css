@@ -1,42 +1,6 @@
 body {
     --density: 0.5;
-}
-
-.min-h-screen {
-    min-height: 100vh;
-}
-
-.hero-flex {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    @media (width >= 64rem) { 
-        flex-direction: row-reverse;
-    }
-}
-
-.hero-text {
-    text-align: center;
-    @media (width >= 64rem) { 
-        text-align: left;
-    }
-}
-
-.hero-title {
-    font-size: 3rem;
-    font-weight: 700;
-    line-height: 1;
-}
-
-.landing-form {
-    width: 100%;
-    max-width: 24rem;
-    flex-shrink: 0;
-    box-shadow:  0 25px 50px -12px rgb(0 0 0 / 0.25);
-}
-
-.py-6 {
-    padding-block: calc(var(--spacing) * 6);
+    --rhythm: 1rem;
 }
 
 .mt-4 {
@@ -46,15 +10,15 @@ body {
 nav {
     box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
     height: 70px;
-
-    /* border-bottom: 0.5px solid hsl(0, 70%, 50%); */
-    /* border-bottom: 1px solid var(--accent); */
-    /* animation: smooth-rainbow 30s linear infinite; */
-    /* border-block-end: none; */
+    padding: 1rem;
 }
 
 .nav-right {
     flex: 1;
+}
+
+#header-title {
+    padding: 0;
 }
 
 .nav-left {
@@ -81,20 +45,7 @@ nav ul {
 
 .room {
     max-width: 600px;
-    /* margin-right: auto; */
     margin-left: 2rem;
-}
-
-section.landing-section {
-    padding-top: 3rem;
-    padding-bottom: 3rem;
-    padding-left: auto;
-    padding-right: auto;
-}
-
-div.landing-cell {
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
 }
 
 .chat-container {
@@ -110,7 +61,6 @@ div.landing-cell {
 
 .chat-half {
     height: 100%;
-    /* overflow-y: scroll; */
     width: 50%;
     min-width: 50%;
     max-width: 50%;
@@ -118,15 +68,7 @@ div.landing-cell {
     display: flex;
     flex-direction: column;
     border: 1px solid var(--plain-fg);
-    /* border: 1px solid var(--accent); */
-    /* animation: smooth-rainbow 30s linear infinite; */
 }
-
-/* @keyframes smooth-rainbow { */
-/*     100% {  */
-/*         filter: hue-rotate(360deg); */
-/*     } */
-/* } */
 
 .chat-half-title {
     width: 100%;
@@ -135,7 +77,6 @@ div.landing-cell {
 }
 
 .room-messages {
-    /* height: 100%; */
     overflow-y: auto;
     flex: 1;
     min-height: 0;
@@ -144,13 +85,10 @@ div.landing-cell {
 .chat-control {
     display: flex;
     width: 100%;
-    /* flex-shrink: 0; */
-    /* position: absolute; */
-    /* bottom: 1rem; */
 }
 
-.message-content {
-    /* white-space: pre-wrap; */
+#copy-message {
+    display: none;
 }
 
 @media (max-width: 768px) {

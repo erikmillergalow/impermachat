@@ -4,7 +4,7 @@
 <div class="">
     <div class="">
         <div class="">
-            <h1 class="">ImpermaChat</h1>
+            <h1 class="">Impermachat</h1>
             <p class="">
                 Quick and easy ephemeral chat rooms with realtime typing display.
             </p>
@@ -38,6 +38,9 @@
                     </select>
                 </fieldset>
                 <button class="btn btn-neutral mt-4">Enter room</button>
+                {% if show_message %}
+                    <p class="bad color bg">{{ message }}</p>
+                {% endif %}
             </div>
         </div>
     </div>

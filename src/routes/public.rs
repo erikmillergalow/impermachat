@@ -9,7 +9,10 @@ use serde::Deserialize;
 
 #[derive(Template)]
 #[template(path="index.html")]
-pub struct IndexTemplate {}
+pub struct IndexTemplate {
+    show_message: bool,
+    message: String,
+}
 
 pub fn router() -> Router<()> {
     Router::new()
@@ -21,7 +24,10 @@ mod get {
     use super::*;
 
     pub async fn index() -> IndexTemplate {
-        IndexTemplate{}
+        IndexTemplate{
+            show_message: false,
+            message: "".to_string(),
+        }
     }
 }
 
@@ -47,6 +53,14 @@ mod post {
     ) -> impl IntoResponse {
         let room_path = format!("/room/{}?hours={}&minutes={}", sanitize_room_name(&create_room_form.room_name), create_room_form.hours, create_room_form.minutes);
         println!("{}", room_path);
+
+        if create_room_form.room_name.trim().is_empty() {
+            return IndexTemplate{
+                show_message: true,
+                message: "Enter a room name".to_string(),
+            }.into_response()
+        }
+
         Redirect::to(&room_path).into_response()
     }
 }

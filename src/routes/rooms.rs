@@ -48,7 +48,7 @@ use axum::{
 };
 use uuid::Uuid;
 use tokio_stream::StreamExt as _;
-use futures_util::stream::{self, Stream};
+use futures_util::stream::Stream;
 use serde::Deserialize;
 use async_stream::try_stream;
 use tokio_stream::wrappers::BroadcastStream;
@@ -519,7 +519,6 @@ struct TypingRequest {
     message: String,
 }
 
-// #[debug_handler]
 async fn update_room(
     headers: HeaderMap,
     State(state): State<Arc<AllRooms>>,
@@ -647,7 +646,6 @@ pub struct ChatInputTemplate {
 #[template(path = "set_name.html")]
 pub struct SetNameTemplate {
     room_id: String,
-    connection_id: String,
     message: String,
 }
 
@@ -701,7 +699,6 @@ async fn set_name(
             // name already taken
             let template = SetNameTemplate {
                 room_id,
-                connection_id: connection_id.clone(),
                 message: "Name already taken".to_string(),
             }.render().unwrap();
 

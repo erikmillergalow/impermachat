@@ -4,7 +4,6 @@ use std::{
     time::Instant,
     collections::HashMap,
 };
-use http::HeaderValue;
 use tokio::{
     sync::{
         Mutex,
@@ -17,11 +16,6 @@ use tokio::{
 };
 use askama::Template;
 use axum::{
-    Router,
-    routing::{
-        get,
-        post,
-    },
     extract::{
         Path,
         State,
@@ -38,117 +32,118 @@ use axum::{
         Redirect,
     },
     http::{
-        Request,
         StatusCode,
-        header::{COOKIE, SET_COOKIE},
         HeaderMap,
     },
-    middleware::{self, Next},
     body::Body,
 };
-use uuid::Uuid;
 use tokio_stream::StreamExt as _;
 use futures_util::stream::Stream;
 use serde::Deserialize;
 use async_stream::try_stream;
 use tokio_stream::wrappers::BroadcastStream;
-use tower_http::set_header::SetResponseHeaderLayer;
-use tower::ServiceBuilder;
+
+use crate::utils::{
+    create_fragments_event,
+    name_to_color,
+    format_time,
+    get_connection_cookie,
+};
+
+use crate::templates::{
+    RoomTemplate,
+    SubmitTemplate,
+    SetNameTemplate,
+    ShutdownTemplate,
+    // StatusMessageTemplate,
+    InitNameTemplate,
+    TypingTemplate,
+    MajorErrorTemplate,
+    ChatInputTemplate,
+    // MessageTemplate,
+};
 
 const MAX_MESSAGE_SIZE: usize = 4000;
 
-pub fn router() -> Router<()> {
-    let rooms = AllRooms::new();
-
-    let sse_router = Router::new()
-        .route("/connect", get(connect_to_room))
-        .layer(SetResponseHeaderLayer::overriding(
-            http::header::CONTENT_TYPE,
-            HeaderValue::from_static("text/event-stream"),
-        ))
-        .layer(SetResponseHeaderLayer::overriding(
-            http::header::CACHE_CONTROL,
-            HeaderValue::from_static("no-cache"),
-        ));
-        // .layer(SetResponseHeaderLayer::overriding(
-        //     http::header::CONNECTION,
-        //     HeaderValue::from_static("keep-alive"),
-        // ));
-
-    Router::new()
-        .route("/room/:room_id", get(render_room))
-        .nest("/room/:room_id", sse_router)
-        .route("/room/:room_id/live", post(update_room))
-        .route("/room/:room_id/submit", post(submit_message))
-        .route("/room/:room_id/name", post(set_name))
-        .layer(ServiceBuilder::new().layer(middleware::from_fn(ensure_uid)))
-        .with_state(rooms)
+#[derive(Clone, Debug)]
+enum Action {
+    Typing,
+    Send,
+    SetName,
+    ShutdownRoom,
+    UpdateTime,
+    MajorError,
 }
 
-fn name_to_color(name: &str) -> String {
-    let mut hash: u32 = 0;
-    for byte in name.bytes() {
-        hash = hash.wrapping_add(byte as u32);
-        hash = hash.wrapping_mul(31);
+#[derive(Clone)]
+struct ActionEvent {
+    connection_id: String,
+    action: Action,
+}
+
+#[derive(Clone)]
+pub struct Room {
+    tx: broadcast::Sender<ActionEvent>,
+    message_history: Vec<Message>,
+    typing_state: HashMap<String, Message>,
+    join_count: u32,
+    name_to_id: HashMap<String, String>,
+    id_to_name: HashMap<String, String>,
+    name_to_color: HashMap<String, String>,
+    expiration: Instant,
+}
+
+#[derive(Clone)]
+pub struct Message {
+    pub name: String,
+    pub connection_id: String,
+    pub color: String,
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RoomParams {
+    pub room_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TypingRequest {
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetNameRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExpirationParams {
+    #[serde(default)]
+    pub hours: Option<u64>,
+    #[serde(default)]
+    pub minutes: Option<u64>,
+}
+
+pub struct AllRooms {
+    pub rooms: Mutex<HashMap<String, Room>>,
+}
+
+impl AllRooms {
+    pub fn new() -> Arc<Self> {
+        let rooms = Arc::new(Self {
+            rooms: Mutex::new(HashMap::new()),
+        });
+
+        let rooms_cleanup = rooms.clone();
+        tokio::spawn(async move {
+            cleanup_rooms(rooms_cleanup).await;
+        });
+
+        rooms
     }
-
-    let r = (hash % 200) + 55; // +55 to avoid going too dark
-    let g = ((hash >> 8) % 200) + 55;
-    let b = ((hash >> 16) % 200) + 55;
-
-    format!("#{:02x}{:02x}{:02x}", r, g, b)
 }
 
-fn format_time(remaining: Duration) -> String {
-    let total_seconds = remaining.as_secs();
-    let hours = total_seconds / 3600;
-    let minutes = (total_seconds % 3600) / 60;
-    let seconds = total_seconds % 60;
-
-    format!("{:02}:{:02}:{:02} remaining...", hours, minutes, seconds)
-
-}
-
-async fn ensure_uid(
-    request: Request<Body>,
-    next: Next,
-) -> Result<Response, StatusCode> {
-
-    // check for cookie
-    let has_browser_id = request
-        .headers()
-        .get(COOKIE)
-        .and_then(|cookie| {
-            cookie
-                .to_str()
-                .ok()
-                .and_then(|c| c.split(';')
-                    .find(|s| s.trim().starts_with("impermachat_id=")))
-        })
-        .is_some();
-
-    let mut response = next.run(request).await;
-
-    // bestow an ID if none found
-    if !has_browser_id {
-        let new_browser_id = Uuid::new_v4().to_string();
-        let cookie = format!("impermachat_id={}; Path=/; HttpOnly", new_browser_id);
-        response.headers_mut().insert(
-            SET_COOKIE,
-            cookie.parse().unwrap()
-        );
-    }
-
-    Ok(response)
-}
-
-#[derive(Template)]
-#[template(path="room.html")]
-pub struct RoomTemplate {
-    room_id: String,
-}
-
-async fn render_room(
+pub async fn render_room(
     Path(RoomParams { room_id }): Path<RoomParams>,
     Query(ExpirationParams { hours, minutes }): Query<ExpirationParams>,
     State(state): State<Arc<AllRooms>>,
@@ -177,24 +172,6 @@ async fn render_room(
         RoomTemplate{
             room_id: room_id.clone(),
         }.into_response()
-    }
-}
-
-pub struct AllRooms {
-    rooms: Mutex<HashMap<String, Room>>,
-}
-impl AllRooms {
-    pub fn new() -> Arc<Self> {
-        let rooms = Arc::new(Self {
-            rooms: Mutex::new(HashMap::new()),
-        });
-
-        let rooms_cleanup = rooms.clone();
-        tokio::spawn(async move {
-            cleanup_rooms(rooms_cleanup).await;
-        });
-
-        rooms
     }
 }
 
@@ -227,108 +204,7 @@ async fn cleanup_rooms(all_rooms: Arc<AllRooms>) {
     }
 }
 
-#[derive(Clone, Debug)]
-enum Action {
-    Typing,
-    Send,
-    SetName,
-    ShutdownRoom,
-    UpdateTime,
-    MajorError,
-}
-
-#[derive(Clone)]
-struct ActionEvent {
-    connection_id: String,
-    action: Action,
-}
-
-#[derive(Clone)]
-struct Room {
-    tx: broadcast::Sender<ActionEvent>,
-    message_history: Vec<Message>,
-    typing_state: HashMap<String, Message>,
-    join_count: u32,
-    name_to_id: HashMap<String, String>,
-    id_to_name: HashMap<String, String>,
-    name_to_color: HashMap<String, String>,
-    expiration: Instant,
-}
-
-#[derive(Clone)]
-struct Message {
-    name: String,
-    connection_id: String,
-    color: String,
-    content: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct RoomParams {
-    room_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ExpirationParams {
-    #[serde(default)]
-    hours: Option<u64>,
-    #[serde(default)]
-    minutes: Option<u64>,
-}
-
-#[derive(Template)]
-#[template(path = "message.html")]
-pub struct MessageTemplate {
-    message: String,
-    person: String,
-}
-
-#[derive(Template)]
-#[template(path = "shutdown_room.html")]
-pub struct ShutdownTemplate {}
-
-#[derive(Template)]
-#[template(path = "submit_message.html")]
-pub struct SubmitTemplate {
-    messages: Vec<Message>,
-    connection_id: String,
-}
-
-#[derive(Template)]
-#[template(path = "typing_messages.html")]
-pub struct TypingTemplate {
-    messages: HashMap<String, Message>,
-    connection_id: String,
-}
-
-#[derive(Template)]
-#[template(path = "init_name.html")]
-pub struct InitNameTemplate {
-    room_id: String,
-}
-
-#[derive(Template)]
-#[template(path = "major_error.html")]
-pub struct MajorErrorTemplate {}
-
-fn get_connection_cookie(headers: &HeaderMap) -> Option<String> {
-    headers.get("cookie")
-        .and_then(|c| c.to_str().ok())
-        .and_then(|c| c.split(';')
-            .find(|s| s.trim().starts_with("impermachat_id="))
-            .map(|s| s.trim_start_matches("impermachat_id=").to_string()))
-}
-
-fn create_fragments_event(rendered_template: String) -> String {
-    let mut raw_event = String::from("");
-    for line in rendered_template.lines() {
-        raw_event.push_str(&format!("fragments {}\n", line));
-    }
-    raw_event
-}
-
-#[axum::debug_handler]
-async fn connect_to_room(
+pub async fn connect_to_room(
     headers: HeaderMap,
     Path(RoomParams { room_id }): Path<RoomParams>,
     State(state): State<Arc<AllRooms>>,
@@ -514,12 +390,7 @@ async fn connect_to_room(
     Sse::new(stream)
 }
 
-#[derive(Debug, Deserialize)]
-struct TypingRequest {
-    message: String,
-}
-
-async fn update_room(
+pub async fn update_room(
     headers: HeaderMap,
     State(state): State<Arc<AllRooms>>,
     Path(RoomParams { room_id }): Path<RoomParams>,
@@ -572,7 +443,7 @@ async fn update_room(
     StatusCode::OK.into_response()
 }
 
-async fn submit_message(
+pub async fn submit_message(
     headers: HeaderMap,
     State(state): State<Arc<AllRooms>>,
     Path(RoomParams { room_id }): Path<RoomParams>,
@@ -631,36 +502,12 @@ async fn submit_message(
     StatusCode::OK.into_response()
 }
 
-
-#[derive(Debug, Deserialize)]
-struct SetNameRequest {
-    name: String,
-}
-#[derive(Template)]
-#[template(path = "chat_input.html")]
-pub struct ChatInputTemplate {
-    room_id: String,
-    person: String,
-}
-#[derive(Template)]
-#[template(path = "set_name.html")]
-pub struct SetNameTemplate {
-    room_id: String,
-    message: String,
-}
-
-#[derive(Template)]
-#[template(path = "status_message.html")]
-pub struct StatusMessageTemplate {
-    target_id: String,
-    message: String,
-}
-async fn set_name(
+pub async fn set_name(
     headers: HeaderMap,
     State(state): State<Arc<AllRooms>>,
     Path(RoomParams { room_id }): Path<RoomParams>,
     Json(payload): Json<SetNameRequest>,
-) -> Response<Body> {  // Simple HTTP response
+) -> Response<Body> {
     let connection_id = match get_connection_cookie(&headers) {
         Some(id) => id,
         None => {

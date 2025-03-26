@@ -5,14 +5,10 @@ use tokio::{
 };
 use listenfd::ListenFd;
 
-use crate::routes::{
-    public, rooms
-};
+use crate::public;
+use crate::routes::rooms_router;
 
-
-pub struct App {
-    // db: SqlitePool,
-}
+pub struct App {}
 
 impl App {
     pub async fn new() -> Result<Self, Box<dyn std::error::Error>> {
@@ -26,7 +22,7 @@ impl App {
         //     .allow_headers([http::header::CONTENT_TYPE]);
 
         let app = public::router()
-            .merge(rooms::router())
+            .merge(rooms_router())
             .nest_service("/assets", ServeDir::new("assets"));
 
         let mut listenfd = ListenFd::from_env();

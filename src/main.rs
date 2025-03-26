@@ -1,10 +1,6 @@
 mod app;
 mod rooms;
 mod public;
-mod templates;
-mod utils;
-mod middleware;
-mod routes;
 
 use crate::app::App;
 

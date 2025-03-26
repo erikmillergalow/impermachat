@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use askama::Template;
 
-use crate::rooms::Message;
+use super::handlers::Message;
 
 #[derive(Template)]
 #[template(path="room.html")]

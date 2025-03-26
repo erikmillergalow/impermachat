@@ -10,7 +10,7 @@ use axum::{
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower::ServiceBuilder;
 
-use crate::rooms::{
+use super::handlers::{
     connect_to_room,
     submit_message,
     update_room,
@@ -19,7 +19,7 @@ use crate::rooms::{
     AllRooms,
 };
 
-use crate::middleware::ensure_uid;
+use super::middleware::ensure_uid;
 
 pub fn rooms_router() -> Router<()> {
     let rooms = AllRooms::new();

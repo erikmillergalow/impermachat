@@ -6,7 +6,7 @@ use tokio::{
 use listenfd::ListenFd;
 
 use crate::public;
-use crate::routes::rooms_router;
+use crate::rooms;
 
 pub struct App {}
 
@@ -21,8 +21,8 @@ impl App {
         //     .allow_headers(Any);
         //     .allow_headers([http::header::CONTENT_TYPE]);
 
-        let app = public::router()
-            .merge(rooms_router())
+        let app = public::routes::public_router()
+            .merge(rooms::routes::rooms_router())
             .nest_service("/assets", ServeDir::new("assets"));
 
         let mut listenfd = ListenFd::from_env();

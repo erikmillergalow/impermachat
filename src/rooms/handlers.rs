@@ -37,11 +37,13 @@ use axum::{
     },
     body::Body,
 };
-use tokio_stream::StreamExt as _;
 use futures_util::stream::Stream;
 use serde::Deserialize;
 use async_stream::try_stream;
-use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::{
+    wrappers::BroadcastStream,
+    StreamExt as _,
+};
 
 use super::utils::{
     create_fragments_event,
@@ -512,7 +514,7 @@ pub async fn set_name(
             return (
                 StatusCode::OK,
                 [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
-                "event: datastar-merge-fragments\ndata: fragments <div class='error-message'>Missing connection ID cookie</div>\n\n"
+                "event: datastar-merge-fragments\ndata:fragments <div id='chat-container'><h1 class='major-error-message'>Unable to find connection ID cookie - refresh to attempt to recover</h1><div class='button-center'><button class='big' onclick='window.location.reload()'>Refresh</button></div></div>\n\n"
             ).into_response();
         }
     };

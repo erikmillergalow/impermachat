@@ -1,6 +1,14 @@
 body {
     --density: 0.5;
     --rhythm: 1rem;
+
+    padding-bottom: env(safe-area-inset-bottom);
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+}
+
+html {
+    height: -webkit-fill-available;
 }
 
 .mt-4 {
@@ -55,7 +63,7 @@ nav ul {
 }
 
 .chat-body {
-    height: calc(100vh - 70px);
+    height: calc(100vh - 70px - env(safe-area-inset-bottom));
     overflow: hidden;
 }
 

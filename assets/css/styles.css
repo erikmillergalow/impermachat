@@ -2,9 +2,9 @@ body {
     --density: 0.5;
     --rhythm: 1rem;
 
-    padding-bottom: env(safe-area-inset-bottom);
-    min-height: 100vh;
-    min-height: -webkit-fill-available;
+    /* padding-bottom: env(safe-area-inset-bottom); */
+    /* min-height: 100vh; */
+    /* min-height: -webkit-fill-available; */
 }
 
 html {
@@ -63,7 +63,8 @@ nav ul {
 }
 
 .chat-body {
-    height: calc(100vh - 70px - env(safe-area-inset-bottom));
+    /* height: calc(100vh - 70px - env(safe-area-inset-bottom)); */
+    height: calc(100vh - 70px);
     overflow: hidden;
 }
 

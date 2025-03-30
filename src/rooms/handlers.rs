@@ -158,6 +158,9 @@ pub async fn render_room(
             return Redirect::to("/").into_response();
         }
 
+        let clamped_hours = hours.unwrap_or(0).clamp(0, 12);
+        let clamped_minutes = minutes.unwrap_or(0).clamp(0, 60);
+
         let (tx, _rx) = broadcast::channel(100);
         rooms.insert(room_id.clone(), Room{
             tx,
@@ -167,7 +170,7 @@ pub async fn render_room(
             id_to_name: HashMap::new(),
             name_to_color: HashMap::new(),
             typing_state: HashMap::new(),
-            expiration: Instant::now() + Duration::from_secs(hours.unwrap_or(0) * 60 * 60) + Duration::from_secs(minutes.unwrap_or(1) * 60),
+            expiration: Instant::now() + Duration::from_secs(clamped_hours * 60 * 60) + Duration::from_secs(clamped_minutes * 60),
         });
         RoomTemplate{
             room_id: room_id.clone(),
@@ -214,7 +217,7 @@ pub async fn connect_to_room(
     let connection_id = get_connection_cookie(&headers)
         .expect("Middleware should have bestowed UUID by now.");
 
-    // check for existing room or create one
+    // check for existing room or create 0 second one (want to redirect to index instead)
     let rx = {
         let mut rooms = state.rooms.lock().await;
         if let Some(room) = rooms.get_mut(&room_id) {
@@ -230,7 +233,7 @@ pub async fn connect_to_room(
                 id_to_name: HashMap::new(),
                 name_to_color: HashMap::new(),
                 typing_state: HashMap::new(),
-                expiration: Instant::now() + Duration::from_secs(30),
+                expiration: Instant::now() + Duration::from_secs(0),
             });
             rx
         }

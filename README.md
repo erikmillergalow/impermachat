@@ -10,3 +10,5 @@ Built with [Axum](https://github.com/tokio-rs/axum), [Askama](https://github.com
 
 ### Hot reload for dev
 `systemfd --no-pid -s http::8080 -- cargo watch -x run`
+
+[View on Forgejo](https://impermachat.emgemg.net/)

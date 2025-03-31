@@ -1,0 +1,21 @@
+[Unit]
+Description=Impermachat Chat Web Service
+After=network.target
+
+[Service]
+User=impermachat
+WorkingDirectory=/opt/impermachat
+ExecStart=/opt/impermachat/impermachat
+
+Restart=always
+RestartSec=5
+
+OOMScoreAdjust=500
+
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
